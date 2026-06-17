@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleDisplayName</key>
+    <string>Hermes Dictate</string>
+    <key>CFBundleExecutable</key>
+    <string>HermesDictate</string>
+    <key>CFBundleIconFile</key>
+    <string></string>
+    <key>CFBundleIdentifier</key>
+    <string>az.isupport.hermesdictate</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>Hermes Dictate</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Hermes Dictate needs microphone access to record your voice for local transcription.</string>
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+    <key>NSSupportsAutomaticTermination</key>
+    <false/>
+    <key>NSSupportsSuddenTermination</key>
+    <false/>
+    <!-- HDPythonPath is read by the app at launch to locate the venv python.
+         Default falls back to ~/Documents/Hermes.Dictate/venv if not present. -->
+    <key>HDPythonPath</key>
+    <string>/Users/eminganbarov/Documents/Hermes.Dictate/venv/bin/python3</string>
+    <!-- HDTranscribeScript is the bundled transcribe.py in Contents/Resources. -->
+    <key>HDTranscribeScript</key>
+    <string>transcribe.py</string>
+</dict>
+</plist>
