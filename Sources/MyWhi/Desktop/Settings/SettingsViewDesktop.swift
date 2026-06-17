@@ -133,9 +133,25 @@ struct SettingsViewDesktop: View {
                     .help("Phase 6.2: требует Accessibility permission")
 
                 if appState.settings.autoPaste {
-                    Text("⚠️ Phase 6.2 — auto-paste ещё не реализован")
-                        .font(HDFont.micro)
-                        .foregroundStyle(HDColor.coral)
+                    HStack(spacing: HDSpacing.sm.rawValue) {
+                        if AutoPasteService.isAccessibilityGranted() {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(HDColor.deepGreen)
+                            Text("Accessibility permission выдана")
+                                .font(HDFont.caption)
+                                .foregroundStyle(HDColor.muted)
+                        } else {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(HDColor.coral)
+                            Text("Нужно разрешение Accessibility в Системных настройках")
+                                .font(HDFont.caption)
+                                .foregroundStyle(HDColor.coral)
+                        }
+                        Spacer()
+                        HDButtonSecondary(title: "Открыть настройки") {
+                            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+                        }
+                    }
                 }
             }
         }

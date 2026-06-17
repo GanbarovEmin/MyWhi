@@ -26,9 +26,14 @@ struct HomeView: View {
                     if statsObserver.notes.isEmpty {
                         OnboardingCard()
                     }
+
+                    dropHint
                 }
                 .padding(HDSpacing.xxl.rawValue)
                 .frame(maxWidth: 720)
+            }
+            .onDrop(of: [.fileURL, .audio, .data], isTargeted: nil) { providers in
+                handleDrop(providers: providers)
             }
         }
     }
@@ -119,6 +124,63 @@ struct HomeView: View {
         case .copied:       return HDColor.ink
         case .error:        return HDColor.error
         default:            return HDColor.ink
+        }
+    }
+
+    // MARK: - Drag-and-drop import
+
+    private var dropHint: some View {
+        HStack(spacing: HDSpacing.sm.rawValue) {
+            Image(systemName: "tray.and.arrow.down")
+                .font(.system(size: 11))
+                .foregroundStyle(HDColor.muted)
+            Text("Перетащи .wav / .m4a файл сюда для транскрибации")
+                .font(HDFont.caption)
+                .foregroundStyle(HDColor.muted)
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+        .padding(.top, HDSpacing.lg.rawValue)
+    }
+
+    private func handleDrop(providers: [NSItemProvider]) -> Bool {
+        guard let provider = providers.first else { return false }
+        _ = provider.loadObject(ofClass: URL.self) { url, _ in
+            guard let url else { return }
+            DispatchQueue.main.async {
+                Task {
+                    await transcribeFile(at: url)
+                }
+            }
+        }
+        return true
+    }
+
+    private func transcribeFile(at url: URL) async {
+        let model = appState.settings.modelSize
+        let language = appState.settings.language
+        let engine = appState.settings.engine
+
+        appState.objectWillChange.send()
+        // We don't have a direct "transcribing from file" hook on AppState,
+        // but we can reuse the same engine pipeline. This re-implements
+        // AppState.transcribeFile in the public shape.
+        do {
+            try await appState.engineManager.setEngine(engine, model: model)
+            let text = try await appState.engineManager.transcribe(
+                audioPath: url.path,
+                model: model,
+                language: language
+            )
+            _ = await appState.statsObserver.recordTranscript(
+                text: text,
+                language: language,
+                model: model,
+                engine: appState.activeEngineName,
+                durationSeconds: 0,
+                audio: url.lastPathComponent
+            )
+        } catch {
+            NSLog("MyWhi.HomeView: drop-import failed: \(error)")
         }
     }
 

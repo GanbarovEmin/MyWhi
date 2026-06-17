@@ -16,12 +16,29 @@ final class AppContainer: ObservableObject {
 
     let appState: AppState
     let sceneRouter: AppSceneRouter
+    let globalHotKey: GlobalHotKey
 
     private init() {
         self.sceneRouter = AppSceneRouter.shared
         self.appState = AppState()
-        // Bind the scene router to the app state so policy switches
-        // can re-publish UI state if needed.
         self.appState.sceneRouter = sceneRouter
+
+        self.globalHotKey = GlobalHotKey()
+        // Wire hot key → toggle recording. We re-register with the
+        // current default chord; users can change it later.
+        NotificationCenter.default.addObserver(
+            forName: .mywhiHotKeyPressed,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.appState.toggleRecording()
+            }
+        }
+        globalHotKey.register { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.appState.toggleRecording()
+            }
+        }
     }
 }

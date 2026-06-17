@@ -181,6 +181,10 @@ final class AppState: ObservableObject {
 
                 if autoCopy && !text.isEmpty {
                     self.clipboard.copy(text)
+                    if settings.autoPaste {
+                        AutoPasteService.pasteFromClipboard()
+                    }
+                    HapticFeedback.success.fire()
                 }
 
                 if saveHistory && !text.isEmpty {
@@ -209,6 +213,7 @@ final class AppState: ObservableObject {
             } catch {
                 self.status = .error
                 self.errorMessage = "Transcription failed: \(error.localizedDescription)"
+                HapticFeedback.error.fire()
             }
         }
     }
