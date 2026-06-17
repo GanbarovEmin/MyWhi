@@ -70,6 +70,29 @@ final class WhisperKitTranscriber: Transcriber, @unchecked Sendable {
         }
 
         // Build decoding options. Language is "ru"/"en"/"auto".
+        //
+        // Tuned for short dictation clips (typical 5-60s). Key choices:
+        //   - skipSpecialTokens = false  → keep punctuation (default in
+        //                                  WhisperKit; we set it explicitly
+        //                                  so a refactor doesn't reintroduce
+        //                                  a "wall of text" bug).
+        //   - chunkingStrategy = nil     → disable VAD chunking. Short
+        //                                  dictation clips don't need it;
+        //                                  chunking can split a sentence
+        //                                  mid-word and force hallucinated
+        //                                  filler text in each chunk.
+        //   - temperature 0.0 with        → greedy decode: faster, more
+        //     fallbackCount = 5             deterministic. If compression
+        //                                  ratio trips the fallback (2.4),
+        //                                  the temperature bumps by 0.2
+        //                                  and we retry up to 5 times —
+        //                                  usually enough to escape a
+        //                                  hallucination loop on noisy input.
+        //   - compressionRatioThreshold   → 2.4 (default). Lowering this
+        //                                  to 1.8 makes the decoder more
+        //                                  likely to retry on repetitive
+        //                                  hallucination, at a small cost
+        //                                  in latency. Keep default for now.
         let langArg: String? = (language == "auto" || language.isEmpty) ? nil : language
         let options = DecodingOptions(
             task: .transcribe,
@@ -81,13 +104,14 @@ final class WhisperKitTranscriber: Transcriber, @unchecked Sendable {
             topK: 5,
             usePrefillPrompt: true,
             detectLanguage: langArg == nil,
-            skipSpecialTokens: true,
+            skipSpecialTokens: false,        // ← keep punctuation
             withoutTimestamps: true,
             wordTimestamps: false,
             compressionRatioThreshold: 2.4,
             logProbThreshold: -1.0,
             firstTokenLogProbThreshold: -1.5,
-            noSpeechThreshold: 0.6
+            noSpeechThreshold: 0.6,
+            chunkingStrategy: nil            // ← disable VAD chunking
         )
 
         let results = await pipe.transcribe(
