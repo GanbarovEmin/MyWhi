@@ -11,6 +11,8 @@ final class AudioRecorder: NSObject, ObservableObject {
 
     private var recorder: AVAudioRecorder?
     private(set) var lastRecordingURL: URL?
+    private(set) var lastRecordingDuration: TimeInterval = 0
+    private var recordStartedAt: Date?
 
     /// Wav files land here. Created lazily on first start().
     private static var recordingsDir: URL {
@@ -69,6 +71,7 @@ final class AudioRecorder: NSObject, ObservableObject {
             )
         }
         recorder = rec
+        recordStartedAt = Date()
     }
 
     @discardableResult
@@ -82,7 +85,12 @@ final class AudioRecorder: NSObject, ObservableObject {
         }
         rec.stop()
         let url = rec.url
+        // Use AVAudioRecorder.currentTime for sub-second precision; falls
+        // back to wall-clock delta if recorder returns 0 (e.g. paused).
+        let dur = rec.currentTime
+        lastRecordingDuration = dur > 0 ? dur : Date().timeIntervalSince(recordStartedAt ?? Date())
         recorder = nil
+        recordStartedAt = nil
         lastRecordingURL = url
         return url
     }

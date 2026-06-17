@@ -28,6 +28,7 @@ final class WhisperKitTranscriber: Transcriber, @unchecked Sendable {
 
     func loadModel(_ modelName: String) async throws {
         let resolved = resolveModelVariant(modelName)
+        NSLog("MyWhi.WhisperKitTranscriber: loadModel(\(modelName) → \(resolved)) starting")
 
         let config = WhisperKitConfig(
             model: resolved,
@@ -39,11 +40,17 @@ final class WhisperKitTranscriber: Transcriber, @unchecked Sendable {
             useBackgroundDownloadSession: false
         )
 
-        let pipe = try await WhisperKit(config)
+        do {
+            let pipe = try await WhisperKit(config)
+            NSLog("MyWhi.WhisperKitTranscriber: WhisperKit() init succeeded for \(resolved)")
 
-        pipeLock.lock()
-        self.pipe = pipe
-        pipeLock.unlock()
+            pipeLock.lock()
+            self.pipe = pipe
+            pipeLock.unlock()
+        } catch {
+            NSLog("MyWhi.WhisperKitTranscriber: WhisperKit() init FAILED for \(resolved): \(error)")
+            throw error
+        }
     }
 
     func transcribe(audioPath: String, model: String, language: String) async throws -> String {

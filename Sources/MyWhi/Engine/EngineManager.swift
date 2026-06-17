@@ -30,6 +30,9 @@ final class EngineManager: ObservableObject {
 
     /// Swap to a different engine (WhisperKit or Python). Loads the model.
     func setEngine(_ name: String, model: String) async throws {
+        let startTime = Date()
+        NSLog("MyWhi.EngineManager: setEngine(name=\(name), model=\(model)) starting")
+
         let newEngine: Transcriber
         switch name {
         case "whisperkit":
@@ -47,10 +50,13 @@ final class EngineManager: ObservableObject {
         // Try loading on the new engine; if it fails AND we were on WhisperKit,
         // fall back to Python.
         do {
+            NSLog("MyWhi.EngineManager: calling loadModel on \(newEngine.name)…")
             try await newEngine.loadModel(model)
+            NSLog("MyWhi.EngineManager: loadModel succeeded in \(String(format: "%.2f", Date().timeIntervalSince(startTime)))s")
         } catch {
+            NSLog("MyWhi.EngineManager: loadModel FAILED on \(newEngine.name): \(error)")
             if name == "whisperkit" {
-                NSLog("MyWhi.EngineManager: WhisperKit load failed (\(error)), falling back to faster-whisper.")
+                NSLog("MyWhi.EngineManager: WhisperKit load failed, falling back to faster-whisper.")
                 let fallback = PythonTranscriber(pythonPath: pythonPath)
                 try await fallback.loadModel(model)
                 self.active = fallback

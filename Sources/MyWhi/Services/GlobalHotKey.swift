@@ -26,12 +26,13 @@ final class GlobalHotKey {
     private static let hotKeyID: UInt32 = 0x4D57_684B  // "MWhK"
 
     /// Default chord: Cmd+Option+D. Stored as Carbon modifier flags.
-    static let defaultModifiers: UInt32 = UInt32(cmdKey | optionKey)
+    /// nonisolated so it can be used as a default parameter value.
+    nonisolated static let defaultModifiers: UInt32 = UInt32(cmdKey | optionKey)
 
     /// Register the global hotkey. Idempotent — unregisters any prior
     /// registration first. The `onPress` closure is called on the main
     /// thread when the user presses the chord.
-    func register(modifiers: UInt32 = defaultModifiers, keyCode: UInt32 = UInt32(kVK_ANSI_D), onPress: @escaping () -> Void) {
+    func register(modifiers: UInt32 = GlobalHotKey.defaultModifiers, keyCode: UInt32 = UInt32(kVK_ANSI_D), onPress: @escaping () -> Void) {
         unregister()
 
         self.onPress = onPress

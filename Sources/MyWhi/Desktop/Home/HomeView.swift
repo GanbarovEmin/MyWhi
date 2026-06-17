@@ -176,7 +176,7 @@ struct HomeView: View {
                 language: language,
                 model: model,
                 engine: appState.activeEngineName,
-                durationSeconds: 0,
+                durationSeconds: 0,  // drop-import doesn't have a recorder
                 audio: url.lastPathComponent
             )
         } catch {

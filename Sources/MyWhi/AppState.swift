@@ -86,10 +86,12 @@ final class AppState: ObservableObject {
     // MARK: - Engine
 
     private func preloadEngine() async {
+        NSLog("MyWhi.AppState: preloadEngine starting (engine=\(settings.engine), model=\(settings.modelSize))")
         do {
             try await engineManager.setEngine(settings.engine, model: settings.modelSize)
             self.activeEngineName = engineManager.activeName
             self.engineDidFallback = engineManager.didFallback
+            NSLog("MyWhi.AppState: preloadEngine done — active=\(activeEngineName), fallback=\(engineDidFallback)")
         } catch {
             NSLog("MyWhi.AppState: engine preload failed: \(error)")
             // Don't surface to UI — the error will re-appear at recording time.
@@ -193,8 +195,8 @@ final class AppState: ObservableObject {
                         text: text,
                         language: language,
                         model: model,
-                        engine: engine,
-                        durationSeconds: 0,  // populated in Phase 3 from AVAudioRecorder duration
+                        engine: activeEngineName,
+                        durationSeconds: recorder.lastRecordingDuration,
                         audio: filename
                     )
                     // Keep legacy history in sync for the menu bar popover.
