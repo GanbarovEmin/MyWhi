@@ -2,6 +2,12 @@
 // Entry point. NSStatusItem via AppDelegate (macOS 26 safe), with
 // AppSceneRouter managing activation policy for the optional desktop
 // window (added in Phase 3).
+//
+// Two SwiftUI scenes:
+//   - WindowGroup("design-preview")  → DesignSystemPreviewView (debug catalog)
+//   - SwiftUI.Settings               → EmptyView (menu bar lives in NSStatusItem)
+//
+// The desktop WindowGroup for the main app shell is added in Phase 3.
 
 import SwiftUI
 import AppKit
@@ -11,10 +17,18 @@ import Combine
 struct MyWhiApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
-    // SwiftUI requires at least one Scene. SwiftUI.Settings with EmptyView
-    // never opens a window — the menu bar UI lives in the NSStatusItem
-    // popover. The desktop WindowGroup is added in Phase 3.
     var body: some Scene {
+        // Design system preview — opened via the right-click menu's
+        // "Open Design Preview" item. Useful for visual verification
+        // during alpha development; will be hidden in release builds.
+        WindowGroup("Design Preview", id: "design-preview") {
+            DesignPreviewWindow()
+        }
+        .defaultSize(width: 820, height: 760)
+        .windowResizability(.contentMinSize)
+
+        // SwiftUI.Settings with EmptyView never opens a window — the
+        // menu bar UI lives in the NSStatusItem popover.
         SwiftUI.Settings { EmptyView() }
     }
 }
@@ -88,6 +102,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func showContextMenu(from button: NSStatusBarButton) {
         let menu = NSMenu()
         menu.addItem(withTitle: "About MyWhi", action: #selector(about), keyEquivalent: "")
+        menu.addItem(withTitle: "Open Design Preview", action: #selector(openDesignPreview), keyEquivalent: "")
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit MyWhi", action: #selector(quit), keyEquivalent: "q")
         menu.items.forEach { $0.target = self }
@@ -109,6 +124,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Language: \(lang)
         """
         alert.runModal()
+    }
+
+    @objc private func openDesignPreview() {
+        NotificationCenter.default.post(name: .mywhiOpenDesignPreview, object: nil)
     }
 
     @objc private func quit() {
