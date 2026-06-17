@@ -7,13 +7,32 @@ import Combine
 
 final class AppSettings: ObservableObject, Codable {
 
-    @Published var modelSize: String
-    @Published var language: String
-    @Published var autoCopy: Bool
-    @Published var saveHistory: Bool
-    @Published var pythonPath: String
+    // MARK: Engine
+
+    @Published var engine: String                  // "whisperkit" or "faster-whisper"
+    @Published var modelSize: String               // tiny|base|small|medium|large-v3|...
+    @Published var language: String                // ru | en | auto
+
+    // MARK: Behavior
+
+    @Published var autoCopy: Bool                  // copy transcript to clipboard on finish
+    @Published var saveHistory: Bool               // save to vault on finish
+    @Published var autoPaste: Bool                 // simulate Cmd+V into active app (opt-in, Phase 6.2)
+
+    // MARK: Paths
+
+    @Published var pythonPath: String              // venv python (for faster-whisper fallback)
+
+    // MARK: Available values
+
+    static let availableEngines: [(code: String, label: String)] = [
+        ("whisperkit",    "WhisperKit (on-device, recommended)"),
+        ("faster-whisper", "faster-whisper (Python fallback)"),
+    ]
 
     static let availableModels: [String] = [
+        "tiny",
+        "base",
         "small",
         "medium",
         "large-v3-turbo",
@@ -32,22 +51,28 @@ final class AppSettings: ObservableObject, Codable {
     }()
 
     init(
-        modelSize: String = "medium",
+        engine: String = "whisperkit",
+        modelSize: String = "small",
         language: String = "ru",
         autoCopy: Bool = true,
         saveHistory: Bool = true,
+        autoPaste: Bool = false,
         pythonPath: String = AppSettings.defaultPythonPath
     ) {
-        // Validate model/language against known values; fall back to defaults
-        // so a hand-edited settings file cannot crash the app.
+        // Validate inputs against known values; fall back to defaults so
+        // a hand-edited settings file cannot crash the app.
+        let validEngines = AppSettings.availableEngines.map(\.code)
+        self.engine = validEngines.contains(engine) ? engine : "whisperkit"
+
         let validModels = AppSettings.availableModels
-        self.modelSize = validModels.contains(modelSize) ? modelSize : "medium"
+        self.modelSize = validModels.contains(modelSize) ? modelSize : "small"
 
         let validLangCodes = AppSettings.availableLanguages.map(\.code)
         self.language = validLangCodes.contains(language) ? language : "ru"
 
         self.autoCopy = autoCopy
         self.saveHistory = saveHistory
+        self.autoPaste = autoPaste
         self.pythonPath = pythonPath.isEmpty ? AppSettings.defaultPythonPath : pythonPath
     }
 
@@ -90,16 +115,18 @@ final class AppSettings: ObservableObject, Codable {
     // MARK: - Codable
 
     enum CodingKeys: String, CodingKey {
-        case modelSize, language, autoCopy, saveHistory, pythonPath
+        case engine, modelSize, language, autoCopy, saveHistory, autoPaste, pythonPath
     }
 
     convenience init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.init(
-            modelSize: try c.decodeIfPresent(String.self, forKey: .modelSize) ?? "medium",
+            engine: try c.decodeIfPresent(String.self, forKey: .engine) ?? "whisperkit",
+            modelSize: try c.decodeIfPresent(String.self, forKey: .modelSize) ?? "small",
             language: try c.decodeIfPresent(String.self, forKey: .language) ?? "ru",
             autoCopy: try c.decodeIfPresent(Bool.self, forKey: .autoCopy) ?? true,
             saveHistory: try c.decodeIfPresent(Bool.self, forKey: .saveHistory) ?? true,
+            autoPaste: try c.decodeIfPresent(Bool.self, forKey: .autoPaste) ?? false,
             pythonPath: try c.decodeIfPresent(String.self, forKey: .pythonPath)
                 ?? AppSettings.defaultPythonPath
         )
@@ -107,10 +134,12 @@ final class AppSettings: ObservableObject, Codable {
 
     func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(engine, forKey: .engine)
         try c.encode(modelSize, forKey: .modelSize)
         try c.encode(language, forKey: .language)
         try c.encode(autoCopy, forKey: .autoCopy)
         try c.encode(saveHistory, forKey: .saveHistory)
+        try c.encode(autoPaste, forKey: .autoPaste)
         try c.encode(pythonPath, forKey: .pythonPath)
     }
 }

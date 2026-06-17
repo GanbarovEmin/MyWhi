@@ -25,5 +25,10 @@ let package = Package(
             ],
             path: "Sources/MyWhi"
         ),
+        .testTarget(
+            name: "MyWhiTests",
+            dependencies: ["MyWhi"],
+            path: "Tests/MyWhiTests"
+        ),
     ]
 )

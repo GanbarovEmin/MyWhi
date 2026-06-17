@@ -68,14 +68,16 @@ mkdir -p "$APP_BUNDLE/Contents/Resources"
 cp "$BIN_PATH" "$APP_BUNDLE/Contents/MacOS/MyWhi"
 chmod +x "$APP_BUNDLE/Contents/MacOS/MyWhi"
 
-cp "$PROJECT_ROOT/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
-cp "$PROJECT_ROOT/transcribe.py" "$APP_BUNDLE/Contents/Resources/transcribe.py"
+# -X strips extended attributes (com.apple.provenance, FinderInfo) which
+# would otherwise break ad-hoc codesigning with "resource fork... not allowed".
+cp -X "$PROJECT_ROOT/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
+cp -X "$PROJECT_ROOT/transcribe.py" "$APP_BUNDLE/Contents/Resources/transcribe.py"
 
 # Bundle any other Resources/* (e.g. AppIcon.icns). Transcribe.py is handled
 # above explicitly so we don't double-copy it.
 for f in "$PROJECT_ROOT"/Resources/*; do
   if [ -f "$f" ]; then
-    cp "$f" "$APP_BUNDLE/Contents/Resources/$(basename "$f")"
+    cp -X "$f" "$APP_BUNDLE/Contents/Resources/$(basename "$f")"
   fi
 done
 

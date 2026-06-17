@@ -1,10 +1,17 @@
-// Transcriber.swift
-// Spawns the Python venv + transcribe.py as a child process and returns
-// the transcribed text. No streaming; the whole text comes back at once.
+// PythonTranscriber.swift
+// Fallback engine — spawns the Python venv + transcribe.py as a child
+// process and returns the transcribed text. Used only if the user
+// explicitly switches away from WhisperKit (or as a fallback when
+// WhisperKit fails to load a model).
+//
+// transcribe.py wraps faster-whisper (CTranslate2) and reads/writes
+// stdout/stderr as plain text. See transcribe.py for the CLI contract.
 
 import Foundation
 
-final class Transcriber {
+final class PythonTranscriber: Transcriber, @unchecked Sendable {
+
+    let name = "faster-whisper"
 
     private let pythonPath: String
     private let scriptPath: String
@@ -19,6 +26,13 @@ final class Transcriber {
         } else {
             self.scriptPath = "\(NSHomeDirectory())/Documents/MyWhi/transcribe.py"
         }
+    }
+
+    /// Python is a stateless invocation — the model is loaded inside the
+    /// Python process per call. This is a no-op for parity with the
+    /// WhisperKitTranscriber API.
+    func loadModel(_ modelName: String) async throws {
+        // No-op: Python subprocess loads the model itself.
     }
 
     /// Run the Python transcribe.py and return the plain text result.
@@ -51,7 +65,7 @@ final class Transcriber {
         let fm = FileManager.default
         if !fm.fileExists(atPath: pythonPath) {
             throw NSError(
-                domain: "MyWhi.Transcriber",
+                domain: "MyWhi.PythonTranscriber",
                 code: 10,
                 userInfo: [NSLocalizedDescriptionKey:
                     "Python interpreter not found at: \(pythonPath). Re-run build.sh to recreate the venv."]
@@ -59,7 +73,7 @@ final class Transcriber {
         }
         if !fm.fileExists(atPath: scriptPath) {
             throw NSError(
-                domain: "MyWhi.Transcriber",
+                domain: "MyWhi.PythonTranscriber",
                 code: 11,
                 userInfo: [NSLocalizedDescriptionKey:
                     "transcribe.py not found at: \(scriptPath)."]
@@ -104,7 +118,7 @@ final class Transcriber {
                 .suffix(20)
                 .joined(separator: "\n")
             throw NSError(
-                domain: "MyWhi.Transcriber",
+                domain: "MyWhi.PythonTranscriber",
                 code: Int(process.terminationStatus),
                 userInfo: [NSLocalizedDescriptionKey:
                     "Python exited with status \(process.terminationStatus):\n\(trimmed)"]

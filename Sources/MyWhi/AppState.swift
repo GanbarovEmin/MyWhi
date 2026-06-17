@@ -1,7 +1,10 @@
 // AppState.swift
-// Single source of truth for the UI. Owns the recorder, transcriber,
-// clipboard, history, and settings. All mutations happen on the main
-// actor; long-running work is dispatched to a background task.
+// Single source of truth for the UI. Owns the recorder, engine manager,
+// clipboard, history (legacy JSON), and settings. All mutations happen
+// on the main actor; long-running work is dispatched to a background task.
+//
+// Phase 2: EngineManager replaces the old Transcriber. VaultStore is added
+// in Phase 2B (currently history is still the legacy JSON HistoryStore).
 
 import Foundation
 import SwiftUI
@@ -17,6 +20,12 @@ final class AppState: ObservableObject {
     @Published private(set) var history: [HistoryEntry] = []
     @Published var errorMessage: String?
 
+    /// Which engine is currently active (for UI display).
+    @Published private(set) var activeEngineName: String = "WhisperKit"
+
+    /// True when we fell back from WhisperKit → faster-whisper after an error.
+    @Published private(set) var engineDidFallback: Bool = false
+
     // Settings is an ObservableObject so SwiftUI bindings work directly.
     // `var` is required for $appState.settings.<field> bindings to compile
     // (the binding's setter writes through this property).
@@ -25,18 +34,26 @@ final class AppState: ObservableObject {
     // MARK: - Services
 
     let recorder = AudioRecorder()
-    let transcriber: Transcriber
-    let historyStore: HistoryStore
+    let engineManager: EngineManager
+    let historyStore: HistoryStore  // legacy JSON; kept for one migration
     let clipboard: ClipboardService
+    let vaultStore: VaultStore
+    let vaultIndex: VaultIndex
+    let statsObserver: StatsObserver
 
     // MARK: - Init
 
     init() {
         let loaded = AppSettings.load()
         self.settings = loaded
-        self.transcriber = Transcriber(pythonPath: loaded.pythonPath)
+        self.engineManager = EngineManager(pythonPath: loaded.pythonPath)
         self.historyStore = HistoryStore()
         self.clipboard = ClipboardService()
+        let vs = VaultStore()
+        let vi = VaultIndex()
+        self.vaultStore = vs
+        self.vaultIndex = vi
+        self.statsObserver = StatsObserver(vaultStore: vs, vaultIndex: vi)
         self.history = historyStore.load()
 
         // Persist settings on any change.
@@ -46,9 +63,38 @@ final class AppState: ObservableObject {
                 self?.settings.save()
             }
             .store(in: &cancellables)
+
+        // Pre-load the engine in the background so the first recording is fast.
+        Task { @MainActor [weak self] in
+            await self?.preloadEngine()
+        }
+
+        // Run one-time migration from history.json → vault, then refresh.
+        Task { @MainActor [weak self] in
+            await self?.statsObserver.runMigrationIfNeeded()
+            await self?.statsObserver.refresh()
+        }
     }
 
     private var cancellables = Set<AnyCancellable>()
+
+    // MARK: - Engine
+
+    private func preloadEngine() async {
+        do {
+            try await engineManager.setEngine(settings.engine, model: settings.modelSize)
+            self.activeEngineName = engineManager.activeName
+            self.engineDidFallback = engineManager.didFallback
+        } catch {
+            NSLog("MyWhi.AppState: engine preload failed: \(error)")
+            // Don't surface to UI — the error will re-appear at recording time.
+        }
+    }
+
+    /// Called from Settings when the user changes engine or model.
+    func reloadEngine() async {
+        await preloadEngine()
+    }
 
     // MARK: - Recording flow
 
@@ -111,11 +157,17 @@ final class AppState: ObservableObject {
         let language = settings.language
         let autoCopy = settings.autoCopy
         let saveHistory = settings.saveHistory
+        let engine = settings.engine
         let filename = url.lastPathComponent
 
         Task { @MainActor in
             do {
-                let text = try await transcriber.transcribe(
+                // Ensure the engine is loaded with the configured model.
+                try await engineManager.setEngine(engine, model: model)
+                self.activeEngineName = engineManager.activeName
+                self.engineDidFallback = engineManager.didFallback
+
+                let text = try await engineManager.transcribe(
                     audioPath: url.path,
                     model: model,
                     language: language
@@ -127,6 +179,16 @@ final class AppState: ObservableObject {
                 }
 
                 if saveHistory && !text.isEmpty {
+                    // Save to vault (markdown + SQLite index).
+                    _ = await statsObserver.recordTranscript(
+                        text: text,
+                        language: language,
+                        model: model,
+                        engine: engine,
+                        durationSeconds: 0,  // populated in Phase 3 from AVAudioRecorder duration
+                        audio: filename
+                    )
+                    // Keep legacy history in sync for the menu bar popover.
                     self.historyStore.add(
                         HistoryEntry(
                             text: text,
