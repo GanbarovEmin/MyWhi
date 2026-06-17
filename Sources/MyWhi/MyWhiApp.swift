@@ -1,18 +1,19 @@
-// HermesDictateApp.swift
-// Entry point. We use a traditional NSStatusItem (via AppDelegate) instead
-// of SwiftUI's MenuBarExtra, which is more reliable across macOS versions
-// and works correctly with the .accessory activation policy.
+// MyWhiApp.swift
+// Entry point. NSStatusItem via AppDelegate (macOS 26 safe), with
+// AppSceneRouter managing activation policy for the optional desktop
+// window (added in Phase 3).
 
 import SwiftUI
 import AppKit
 import Combine
 
 @main
-struct HermesDictateApp: App {
+struct MyWhiApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     // SwiftUI requires at least one Scene. SwiftUI.Settings with EmptyView
-    // never opens a window — the actual UI lives in the NSStatusItem popover.
+    // never opens a window — the menu bar UI lives in the NSStatusItem
+    // popover. The desktop WindowGroup is added in Phase 3.
     var body: some Scene {
         SwiftUI.Settings { EmptyView() }
     }
@@ -39,7 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let button = statusItem.button {
             button.image = NSImage(
                 systemSymbolName: "mic",
-                accessibilityDescription: "Hermes Dictate"
+                accessibilityDescription: "MyWhi"
             )
             button.imagePosition = .imageOnly
             button.target = self
@@ -86,9 +87,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showContextMenu(from button: NSStatusBarButton) {
         let menu = NSMenu()
-        menu.addItem(withTitle: "About Hermes Dictate", action: #selector(about), keyEquivalent: "")
+        menu.addItem(withTitle: "About MyWhi", action: #selector(about), keyEquivalent: "")
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Quit Hermes Dictate", action: #selector(quit), keyEquivalent: "q")
+        menu.addItem(withTitle: "Quit MyWhi", action: #selector(quit), keyEquivalent: "q")
         menu.items.forEach { $0.target = self }
         statusItem.menu = menu
         button.performClick(nil)
@@ -97,12 +98,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func about() {
         let alert = NSAlert()
-        alert.messageText = "Hermes Dictate"
+        alert.messageText = "MyWhi"
         let model = MainActor.assumeIsolated { appState.settings.modelSize }
         let lang = MainActor.assumeIsolated { appState.settings.language }
         alert.informativeText = """
         Local-only voice dictation for macOS.
-        Powered by Faster-Whisper (offline).
+        Powered by WhisperKit (on-device) with faster-whisper fallback.
 
         Model: \(model)
         Language: \(lang)
@@ -121,7 +122,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let symbolName = status.iconName
         guard let img = NSImage(
             systemSymbolName: symbolName,
-            accessibilityDescription: "Hermes Dictate — \(status.rawValue)"
+            accessibilityDescription: "MyWhi — \(status.rawValue)"
         ) else { return }
         img.isTemplate = true
         button.image = img

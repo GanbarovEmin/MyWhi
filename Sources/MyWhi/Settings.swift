@@ -28,7 +28,7 @@ final class AppSettings: ObservableObject, Codable {
 
     static let defaultPythonPath: String = {
         let home = NSHomeDirectory()
-        return "\(home)/Documents/Hermes.Dictate/venv/bin/python3"
+        return "\(home)/Documents/MyWhi/venv/bin/python3"
     }()
 
     init(
@@ -58,7 +58,7 @@ final class AppSettings: ObservableObject, Codable {
         let base = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory())
                 .appendingPathComponent("Library/Application Support")
-        let dir = base.appendingPathComponent("HermesDictate", isDirectory: true)
+        let dir = base.appendingPathComponent("MyWhi", isDirectory: true)
         try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appendingPathComponent("settings.json")
     }
@@ -83,7 +83,7 @@ final class AppSettings: ObservableObject, Codable {
             try data.write(to: url, options: .atomic)
         } catch {
             // Non-fatal: settings just won't persist this change.
-            NSLog("HermesDictate: failed to save settings: \(error)")
+            NSLog("MyWhi: failed to save settings: \(error)")
         }
     }
 

@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# uninstall.sh — Remove Hermes Dictate.app from /Applications and
+# uninstall.sh — Remove MyWhi.app from /Applications and
 # optionally purge the user data folder.
 
 set -euo pipefail
 
-DEST="/Applications/Hermes Dictate.app"
-DATA="$HOME/Library/Application Support/HermesDictate"
+DEST="/Applications/MyWhi.app"
+DATA="$HOME/Library/Application Support/MyWhi"
 RECORDINGS="/tmp/hermes-dictate"
 
-pkill -f "HermesDictate" >/dev/null 2>&1 || true
+pkill -f "MyWhi" >/dev/null 2>&1 || true
 sleep 0.3
 
 if [ -d "$DEST" ]; then
@@ -29,5 +29,5 @@ if [ -d "$RECORDINGS" ]; then
 fi
 
 printf '\n[uninstall] Done.\n'
-printf 'The venv at ~/Documents/Hermes.Dictate/venv/ is left in place.\n'
-printf 'Remove it manually with: rm -rf ~/Documents/Hermes.Dictate/venv\n'
+printf 'The venv at ~/Documents/MyWhi/venv/ is left in place.\n'
+printf 'Remove it manually with: rm -rf ~/Documents/MyWhi/venv\n'

@@ -63,7 +63,7 @@ final class AudioRecorder: NSObject, ObservableObject {
         rec.prepareToRecord()
         guard rec.record() else {
             throw NSError(
-                domain: "HermesDictate.AudioRecorder",
+                domain: "MyWhi.AudioRecorder",
                 code: -1,
                 userInfo: [NSLocalizedDescriptionKey: "AVAudioRecorder.record() returned false"]
             )
@@ -75,7 +75,7 @@ final class AudioRecorder: NSObject, ObservableObject {
     func stop() throws -> URL {
         guard let rec = recorder else {
             throw NSError(
-                domain: "HermesDictate.AudioRecorder",
+                domain: "MyWhi.AudioRecorder",
                 code: -2,
                 userInfo: [NSLocalizedDescriptionKey: "Recorder is not running"]
             )
@@ -94,7 +94,7 @@ extension AudioRecorder: AVAudioRecorderDelegate {
     nonisolated func audioRecorderDidFinishRecording(_ recorder: AVAudioRecorder, successfully flag: Bool) {
         // We drive stop() explicitly; this is informational.
         if !flag {
-            NSLog("HermesDictate: AVAudioRecorder finished unsuccessfully")
+            NSLog("MyWhi: AVAudioRecorder finished unsuccessfully")
         }
     }
 }

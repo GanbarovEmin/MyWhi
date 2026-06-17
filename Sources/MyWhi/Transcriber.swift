@@ -17,7 +17,7 @@ final class Transcriber {
         if let bundled = Bundle.main.path(forResource: "transcribe", ofType: "py") {
             self.scriptPath = bundled
         } else {
-            self.scriptPath = "\(NSHomeDirectory())/Documents/Hermes.Dictate/transcribe.py"
+            self.scriptPath = "\(NSHomeDirectory())/Documents/MyWhi/transcribe.py"
         }
     }
 
@@ -51,7 +51,7 @@ final class Transcriber {
         let fm = FileManager.default
         if !fm.fileExists(atPath: pythonPath) {
             throw NSError(
-                domain: "HermesDictate.Transcriber",
+                domain: "MyWhi.Transcriber",
                 code: 10,
                 userInfo: [NSLocalizedDescriptionKey:
                     "Python interpreter not found at: \(pythonPath). Re-run build.sh to recreate the venv."]
@@ -59,7 +59,7 @@ final class Transcriber {
         }
         if !fm.fileExists(atPath: scriptPath) {
             throw NSError(
-                domain: "HermesDictate.Transcriber",
+                domain: "MyWhi.Transcriber",
                 code: 11,
                 userInfo: [NSLocalizedDescriptionKey:
                     "transcribe.py not found at: \(scriptPath)."]
@@ -104,7 +104,7 @@ final class Transcriber {
                 .suffix(20)
                 .joined(separator: "\n")
             throw NSError(
-                domain: "HermesDictate.Transcriber",
+                domain: "MyWhi.Transcriber",
                 code: Int(process.terminationStatus),
                 userInfo: [NSLocalizedDescriptionKey:
                     "Python exited with status \(process.terminationStatus):\n\(trimmed)"]

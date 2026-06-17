@@ -68,7 +68,7 @@ final class AppState: ObservableObject {
             let granted = await recorder.requestPermissionIfNeeded()
             guard granted else {
                 self.status = .error
-                self.errorMessage = "Microphone permission denied. Open System Settings → Privacy & Security → Microphone and allow Hermes Dictate."
+                self.errorMessage = "Microphone permission denied. Open System Settings → Privacy & Security → Microphone and allow MyWhi."
                 return
             }
             do {

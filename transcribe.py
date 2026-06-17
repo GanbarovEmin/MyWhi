@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Hermes Dictate — local Faster-Whisper transcription.
+MyWhi — local Faster-Whisper transcription (fallback engine).
 
 Usage:
     transcribe.py <audio_path> [--model MODEL] [--language LANG]
@@ -32,7 +32,7 @@ DEFAULT_BEAM_SIZE = 5
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
         prog="transcribe.py",
-        description="Local Faster-Whisper transcription for Hermes Dictate.",
+        description="Local Faster-Whisper transcription for MyWhi (fallback engine).",
     )
     p.add_argument("audio_path", help="Path to audio file (WAV 16kHz mono preferred)")
     p.add_argument("--model", default=DEFAULT_MODEL,

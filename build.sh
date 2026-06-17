@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# build.sh — Build Hermes Dictate.app from source.
+# build.sh — Build MyWhi.app from source.
 #
 # Steps:
-#   1. Create venv (if missing) and install faster-whisper
-#   2. Compile Swift with Swift Package Manager
+#   1. Create venv (if missing) and install faster-whisper (fallback engine)
+#   2. Compile Swift with Swift Package Manager (WhisperKit dep fetched automatically)
 #   3. Wrap the binary in a .app bundle
 #   4. Ad-hoc codesign the bundle
 #
-# Output: dist/Hermes Dictate.app
+# Output: dist/MyWhi.app
 
 set -euo pipefail
 
@@ -17,7 +17,7 @@ cd "$PROJECT_ROOT"
 PYTHON_BIN="/usr/local/bin/python3"
 VENV_DIR="$PROJECT_ROOT/venv"
 VENV_PY="$VENV_DIR/bin/python3"
-APP_NAME="Hermes Dictate"
+APP_NAME="MyWhi"
 APP_BUNDLE="$PROJECT_ROOT/dist/${APP_NAME}.app"
 
 log() { printf '\033[1;34m[build]\033[0m %s\n' "$*"; }
@@ -52,7 +52,7 @@ swift build -c release
 
 # Resolve the produced binary path. Swift 6.x can place it under
 # .build/release/ or .build/<arch>-apple-macosx/release/.
-BIN_PATH="$(swift build -c release --show-bin-path)/HermesDictate"
+BIN_PATH="$(swift build -c release --show-bin-path)/MyWhi"
 if [ ! -x "$BIN_PATH" ]; then
   err "Built binary not found at $BIN_PATH"
   exit 1
@@ -65,11 +65,19 @@ rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_BUNDLE/Contents/MacOS"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
 
-cp "$BIN_PATH" "$APP_BUNDLE/Contents/MacOS/HermesDictate"
-chmod +x "$APP_BUNDLE/Contents/MacOS/HermesDictate"
+cp "$BIN_PATH" "$APP_BUNDLE/Contents/MacOS/MyWhi"
+chmod +x "$APP_BUNDLE/Contents/MacOS/MyWhi"
 
 cp "$PROJECT_ROOT/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
 cp "$PROJECT_ROOT/transcribe.py" "$APP_BUNDLE/Contents/Resources/transcribe.py"
+
+# Bundle any other Resources/* (e.g. AppIcon.icns). Transcribe.py is handled
+# above explicitly so we don't double-copy it.
+for f in "$PROJECT_ROOT"/Resources/*; do
+  if [ -f "$f" ]; then
+    cp "$f" "$APP_BUNDLE/Contents/Resources/$(basename "$f")"
+  fi
+done
 
 # PkgInfo lets macOS recognize the bundle type.
 printf 'APPL????' > "$APP_BUNDLE/Contents/PkgInfo"

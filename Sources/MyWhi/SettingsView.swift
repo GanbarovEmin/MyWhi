@@ -18,7 +18,7 @@ struct SettingsDisclosure: View {
 
         HStack {
             Spacer()
-            Button("Quit Hermes Dictate") {
+            Button("Quit MyWhi") {
                 NSApp.terminate(nil)
             }
             .buttonStyle(.borderless)

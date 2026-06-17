@@ -40,7 +40,7 @@ struct MainPopoverView: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(appState.status.rawValue)
                     .font(.headline)
-                Text("Hermes Dictate")
+                Text("MyWhi")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

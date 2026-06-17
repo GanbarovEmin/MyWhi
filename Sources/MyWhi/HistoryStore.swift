@@ -29,7 +29,7 @@ final class HistoryStore {
         let base = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory())
                 .appendingPathComponent("Library/Application Support")
-        let dir = base.appendingPathComponent("HermesDictate", isDirectory: true)
+        let dir = base.appendingPathComponent("MyWhi", isDirectory: true)
         try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
         self.url = dir.appendingPathComponent("history.json")
     }
@@ -67,7 +67,7 @@ final class HistoryStore {
             let data = try encoder.encode(entries)
             try data.write(to: url, options: .atomic)
         } catch {
-            NSLog("HermesDictate: failed to save history: \(error)")
+            NSLog("MyWhi: failed to save history: \(error)")
         }
     }
 }
