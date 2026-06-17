@@ -1,13 +1,12 @@
 // MyWhiApp.swift
-// Entry point. NSStatusItem via AppDelegate (macOS 26 safe), with
-// AppSceneRouter managing activation policy for the optional desktop
-// window (added in Phase 3).
+// Entry point. Three SwiftUI scenes + AppKit NSStatusItem:
 //
-// Two SwiftUI scenes:
-//   - WindowGroup("design-preview")  → DesignSystemPreviewView (debug catalog)
-//   - SwiftUI.Settings               → EmptyView (menu bar lives in NSStatusItem)
+//   - WindowGroup("MyWhi", id: "desktop")   → DesktopRootView (main shell)
+//   - WindowGroup("Design Preview", id:)    → DesignSystemPreviewView
+//   - SwiftUI.Settings                     → EmptyView (no Settings scene)
 //
-// The desktop WindowGroup for the main app shell is added in Phase 3.
+// AppContainer.shared exposes AppState + AppSceneRouter as a single
+// ObservableObject injected via .environmentObject.
 
 import SwiftUI
 import AppKit
@@ -15,20 +14,40 @@ import Combine
 
 @main
 struct MyWhiApp: App {
+
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    @StateObject private var container = AppContainer.shared
 
     var body: some Scene {
-        // Design system preview — opened via the right-click menu's
-        // "Open Design Preview" item. Useful for visual verification
-        // during alpha development; will be hidden in release builds.
+
+        // --- Main desktop shell ---
+        WindowGroup("MyWhi", id: "desktop") {
+            DesktopRootView()
+                .environmentObject(container)
+                .environmentObject(container.appState)
+                .environmentObject(container.appState.statsObserver)
+                .frame(minWidth: 900, minHeight: 600)
+        }
+        .defaultSize(width: 1100, height: 720)
+        .windowResizability(.contentMinSize)
+        .commands {
+            // Hide the default "New" menu item — we don't have documents.
+            CommandGroup(replacing: .newItem) {}
+        }
+
+        // --- Design system preview (alpha dev tool) ---
         WindowGroup("Design Preview", id: "design-preview") {
             DesignPreviewWindow()
+                .environmentObject(container)
         }
         .defaultSize(width: 820, height: 760)
         .windowResizability(.contentMinSize)
 
-        // SwiftUI.Settings with EmptyView never opens a window — the
-        // menu bar UI lives in the NSStatusItem popover.
+        // Settings scene — intentionally empty. The desktop app has
+        // its own SettingsView in the sidebar; this exists only to keep
+        // SwiftUI happy (it requires at least one Scene that isn't a
+        // Settings scene, but this harmless empty Settings lets us be
+        // defensive if macOS later opens one).
         SwiftUI.Settings { EmptyView() }
     }
 }
@@ -39,15 +58,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
-    private var appState: AppState!
     private var cancellables = Set<AnyCancellable>()
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        // Menu bar only — no Dock icon.
-        NSApp.setActivationPolicy(.accessory)
+    private var container: AppContainer { AppContainer.shared }
+    private var appState: AppState { container.appState }
+    private var sceneRouter: AppSceneRouter { container.sceneRouter }
 
-        // Single source of truth, shared with the popover's SwiftUI host.
-        appState = AppState()
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // Menu bar only by default — Dock icon appears once the desktop
+        // window is opened (via AppSceneRouter.setMode(.desktop)).
+        NSApp.setActivationPolicy(.accessory)
 
         // ---- Status item ----
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -67,7 +87,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         popover.behavior = .transient
         popover.contentSize = NSSize(width: 380, height: 540)
         popover.contentViewController = NSHostingController(
-            rootView: MainPopoverView().environmentObject(appState)
+            rootView: MainPopoverView()
+                .environmentObject(container)
+                .environmentObject(appState)
         )
 
         // Re-render status icon whenever AppState.status changes.
@@ -77,6 +99,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.refreshIcon(for: status)
             }
             .store(in: &cancellables)
+
+        // When the router switches to .desktop, activate the app so the
+        // Dock icon appears and windows come forward.
+        sceneRouter.$mode
+            .receive(on: RunLoop.main)
+            .sink { [weak self] mode in
+                if mode == .desktop {
+                    self?.handleDesktopActivation()
+                }
+            }
+            .store(in: &cancellables)
+    }
+
+    private func handleDesktopActivation() {
+        // NSApp already set policy via AppSceneRouter; just make sure
+        // something is brought to the foreground.
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     // MARK: - Popover
@@ -102,6 +141,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func showContextMenu(from button: NSStatusBarButton) {
         let menu = NSMenu()
         menu.addItem(withTitle: "About MyWhi", action: #selector(about), keyEquivalent: "")
+        menu.addItem(withTitle: "Open MyWhi", action: #selector(openDesktop), keyEquivalent: "")
         menu.addItem(withTitle: "Open Design Preview", action: #selector(openDesignPreview), keyEquivalent: "")
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit MyWhi", action: #selector(quit), keyEquivalent: "q")
@@ -116,14 +156,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.messageText = "MyWhi"
         let model = MainActor.assumeIsolated { appState.settings.modelSize }
         let lang = MainActor.assumeIsolated { appState.settings.language }
+        let engine = MainActor.assumeIsolated { appState.activeEngineName }
         alert.informativeText = """
         Local-only voice dictation for macOS.
-        Powered by WhisperKit (on-device) with faster-whisper fallback.
+        Engine: \(engine)
 
         Model: \(model)
         Language: \(lang)
         """
         alert.runModal()
+    }
+
+    @objc private func openDesktop() {
+        NotificationCenter.default.post(name: .mywhiOpenDesktop, object: nil)
     }
 
     @objc private func openDesignPreview() {

@@ -41,6 +41,11 @@ final class AppState: ObservableObject {
     let vaultIndex: VaultIndex
     let statsObserver: StatsObserver
 
+    /// Set by AppContainer after init so AppState can ask the router to
+    /// switch scenes (e.g. switch from .desktop → .menuBar when the
+    /// last window closes).
+    weak var sceneRouter: AppSceneRouter?
+
     // MARK: - Init
 
     init() {

@@ -13,4 +13,14 @@ extension Notification.Name {
     /// from the right-click menu. The DesignPreviewWindow listens and
     /// invokes openWindow(id: "design-preview").
     static let mywhiOpenDesignPreview = Notification.Name("MyWhi.openDesignPreview")
+
+    /// Posted by AppDelegate when the user picks "Open MyWhi" from the
+    /// menu bar right-click menu. The DesktopRootView listens, switches
+    /// the AppSceneRouter to .desktop, and invokes openWindow(id: "desktop").
+    static let mywhiOpenDesktop = Notification.Name("MyWhi.openDesktop")
+
+    /// Posted by HomeView when the user clicks "Open in Scratchpad" on
+    /// the last transcript. DesktopRootView switches selection to
+    /// .scratchpad and sets a search query (userInfo["query"]).
+    static let mywhiNavigateToScratchpad = Notification.Name("MyWhi.navigateToScratchpad")
 }
