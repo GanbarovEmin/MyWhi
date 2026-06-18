@@ -65,18 +65,29 @@ struct SettingsViewDesktop: View {
                     }
                 }
                 .pickerStyle(.segmented)
+                .disabled(appState.engineManager.isLoading)
                 .onChange(of: appState.settings.engine) { _, _ in
                     Task { await appState.reloadEngine() }
                 }
 
                 Picker("Model", selection: modelBinding) {
-                    ForEach(AppSettings.availableModels, id: \.self) { model in
-                        Text(model).tag(model)
+                    ForEach(AppSettings.availableModels, id: \.code) { entry in
+                        Text(entry.label).tag(entry.code)
                     }
                 }
                 .pickerStyle(.menu)
+                .disabled(appState.engineManager.isLoading)
                 .onChange(of: appState.settings.modelSize) { _, _ in
                     Task { await appState.reloadEngine() }
+                }
+
+                // Model description below the picker — .menu style
+                // only shows one line per item, so the description
+                // lives in a small caption underneath.
+                if let entry = AppSettings.availableModels.first(where: { $0.code == appState.settings.modelSize }) {
+                    Text(entry.description)
+                        .font(HDFont.micro)
+                        .foregroundStyle(HDColor.muted)
                 }
 
                 Picker("Language", selection: languageBinding) {
@@ -85,6 +96,17 @@ struct SettingsViewDesktop: View {
                     }
                 }
                 .pickerStyle(.segmented)
+
+                if appState.engineManager.isLoading {
+                    HStack(spacing: HDSpacing.sm.rawValue) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Загружается \(appState.settings.modelSize)…")
+                            .font(HDFont.caption)
+                            .foregroundStyle(HDColor.muted)
+                    }
+                    .padding(.vertical, HDSpacing.xs.rawValue)
+                }
 
                 if appState.engineDidFallback {
                     HStack(spacing: HDSpacing.xs.rawValue) {

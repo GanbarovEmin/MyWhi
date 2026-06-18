@@ -202,6 +202,17 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// Cancel the in-flight recording and throw away the .wav file
+    /// (audit #13: Esc / "Discard" — useful when the user started by
+    /// accident, hit the wrong key, or is just testing).
+    func discardRecording() {
+        guard status == .recording else { return }
+        recorder.cancel()
+        status = .idle
+        errorMessage = nil
+        NSLog("MyWhi.AppState: recording discarded")
+    }
+
     func transcribeLastRecording() {
         guard let url = recorder.lastRecordingURL else {
             errorMessage = "No previous recording available."

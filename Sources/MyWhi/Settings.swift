@@ -30,13 +30,16 @@ final class AppSettings: ObservableObject, Codable {
         ("faster-whisper", "faster-whisper (Python fallback)"),
     ]
 
-    static let availableModels: [String] = [
-        "tiny",
-        "base",
-        "small",
-        "medium",
-        "large-v3-turbo",
-        "large-v3",
+    /// Available model sizes. Each entry is (code, label, description)
+    /// so the Settings picker can show size + speed + quality without
+    /// inventing content (audit #15).
+    static let availableModels: [(code: String, label: String, description: String)] = [
+        ("tiny",            "tiny",            "~40 MB · fastest · lower accuracy"),
+        ("base",            "base",            "~75 MB · fast · decent"),
+        ("small",           "small",           "~250 MB · recommended for dictation"),
+        ("medium",          "medium",          "~750 MB · high quality · slower first load"),
+        ("large-v3-turbo",  "large-v3-turbo",  "~1.5 GB · best speed/quality tradeoff"),
+        ("large-v3",        "large-v3",        "~1.5 GB · highest accuracy · slowest"),
     ]
 
     static let availableLanguages: [(code: String, label: String)] = [
@@ -64,7 +67,7 @@ final class AppSettings: ObservableObject, Codable {
         let validEngines = AppSettings.availableEngines.map(\.code)
         self.engine = validEngines.contains(engine) ? engine : "whisperkit"
 
-        let validModels = AppSettings.availableModels
+        let validModels = AppSettings.availableModels.map(\.code)
         self.modelSize = validModels.contains(modelSize) ? modelSize : "small"
 
         let validLangCodes = AppSettings.availableLanguages.map(\.code)

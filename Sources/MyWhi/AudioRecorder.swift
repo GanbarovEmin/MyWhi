@@ -7,9 +7,16 @@
 // Recordings land in /tmp/mywhi/recordings/. Old files (>7 days) are
 // reaped on every start() to keep the directory bounded. The folder
 // was renamed from "hermes-dictate" in the v2.0.0-alpha audit.
+//
+// LIVE LEVEL
+// During recording we expose `currentLevel` (0...1, RMS amplitude) for
+// the live waveform UI (HDWaveformView). Powered by
+// `recorder.updateMeters()` + `averagePower(forChannel:)` polled on a
+// 30ms timer. Cheap — no audio buffer copies.
 
 import Foundation
 import AVFoundation
+import Combine
 
 @MainActor
 final class AudioRecorder: NSObject, ObservableObject {
@@ -18,6 +25,13 @@ final class AudioRecorder: NSObject, ObservableObject {
     private(set) var lastRecordingURL: URL?
     private(set) var lastRecordingDuration: TimeInterval = 0
     private var recordStartedAt: Date?
+
+    /// Live audio level (0...1). Driven by a Combine timer while
+    /// recording. UI can observe this to render a waveform.
+    @Published private(set) var currentLevel: Float = 0
+
+    /// Timer that polls averagePower while recording.
+    private var levelTimer: Timer?
 
     /// Recordings directory. Exposed internally for legacy-folder
     /// migration in AppState. Created lazily on first start().
@@ -67,6 +81,7 @@ final class AudioRecorder: NSObject, ObservableObject {
         // Stop any in-flight recording first; should not happen in MVP
         // (we gate the menu on status) but be defensive.
         recorder?.stop()
+        stopLevelTimer()
 
         // Reap old files so /tmp doesn't grow unbounded.
         reapOldRecordings()
@@ -76,6 +91,7 @@ final class AudioRecorder: NSObject, ObservableObject {
 
         let rec = try AVAudioRecorder(url: url, settings: Self.wavSettings)
         rec.delegate = self
+        rec.isMeteringEnabled = true   // ← needed for averagePower
         rec.prepareToRecord()
         guard rec.record() else {
             throw NSError(
@@ -86,6 +102,8 @@ final class AudioRecorder: NSObject, ObservableObject {
         }
         recorder = rec
         recordStartedAt = Date()
+        currentLevel = 0
+        startLevelTimer()
     }
 
     @discardableResult
@@ -106,7 +124,60 @@ final class AudioRecorder: NSObject, ObservableObject {
         recorder = nil
         recordStartedAt = nil
         lastRecordingURL = url
+        stopLevelTimer()
+        currentLevel = 0
         return url
+    }
+
+    /// Cancel an in-flight recording and delete the .wav file. Used
+    /// when the user discards a recording (Esc key, or "Discard" from
+    /// the menu bar).
+    func cancel() {
+        guard let rec = recorder else { return }
+        rec.stop()
+        let url = rec.url
+        recorder = nil
+        recordStartedAt = nil
+        lastRecordingURL = nil
+        lastRecordingDuration = 0
+        stopLevelTimer()
+        currentLevel = 0
+        try? FileManager.default.removeItem(at: url)
+        NSLog("MyWhi.AudioRecorder: cancelled and removed \(url.lastPathComponent)")
+    }
+
+    // MARK: - Live level (waveform)
+
+    /// Polls `recorder.averagePower(forChannel: 0)` and republishes
+    /// `currentLevel` as a 0...1 linear value. dB range is -160...0;
+    /// we map -60...0 to 0...1 with a soft floor (so silent parts
+    /// don't spike to 0 and create a jittery waveform).
+    private func startLevelTimer() {
+        levelTimer?.invalidate()
+        let timer = Timer(timeInterval: 0.033, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.sampleLevel()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        levelTimer = timer
+    }
+
+    private func stopLevelTimer() {
+        levelTimer?.invalidate()
+        levelTimer = nil
+    }
+
+    private func sampleLevel() {
+        guard let rec = recorder else { return }
+        rec.updateMeters()
+        let db = rec.averagePower(forChannel: 0)
+        // Map -60 dB → 0, 0 dB → 1, with a soft floor.
+        let clamped = max(-60, min(0, db))
+        let normalized = (clamped + 60) / 60
+        // Apply a slight exp curve so quiet sounds are still visible.
+        let curved = pow(normalized, 0.7)
+        currentLevel = Float(curved)
     }
 
     // MARK: - Cleanup

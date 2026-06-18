@@ -2,6 +2,12 @@
 // The single window anchored to the menu bar icon. Reuses shared
 // components from the Design System so the visual language matches
 // the desktop app exactly.
+//
+// Phase 2.2 / 2.3 changes:
+// - Live HDWaveformView while recording (compact mode, 12 bars)
+// - Explicit "Остановить" Stop button when status == .recording
+// - Live duration counter in the header
+// - "Отменить" Discard button — calls AppState.discardRecording()
 
 import SwiftUI
 
@@ -22,7 +28,10 @@ struct MainPopoverView: View {
                 errorBanner(err)
             }
             quickRecord
-            if !appState.lastTranscript.isEmpty {
+            if appState.status == .recording {
+                recordingControls
+            }
+            if !appState.lastTranscript.isEmpty && appState.status != .recording {
                 lastTranscriptCard
             }
             if !recentNotes.isEmpty {
@@ -92,7 +101,7 @@ struct MainPopoverView: View {
             .lineLimit(4)
     }
 
-    // MARK: - Quick record
+    // MARK: - Quick record (idle / transcribing)
 
     private var quickRecord: some View {
         let state: HDRecordState = {
@@ -130,6 +139,47 @@ struct MainPopoverView: View {
                       || appState.status == .recording
                       || appState.status == .transcribing)
         }
+    }
+
+    // MARK: - Recording controls (live waveform + stop + discard)
+
+    private var recordingControls: some View {
+        VStack(spacing: HDSpacing.md.rawValue) {
+            // Live waveform fills the width
+            HDWaveformView(
+                level: appState.recorder.currentLevel,
+                style: .compact,
+                color: HDColor.deepGreen
+            )
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, HDSpacing.xs.rawValue)
+
+            HStack(spacing: HDSpacing.md.rawValue) {
+                HDButtonPrimary(
+                    title: "Остановить",
+                    icon: "stop.fill"
+                ) {
+                    appState.stopRecording()
+                }
+                .keyboardShortcut(.return, modifiers: [])
+
+                Button {
+                    appState.discardRecording()
+                } label: {
+                    Label("Отменить", systemImage: "xmark")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(HDColor.muted)
+                }
+                .buttonStyle(.plain)
+                .help("Удалить запись без транскрибации (Esc)")
+                .keyboardShortcut(.escape, modifiers: [])
+            }
+        }
+        .padding(HDSpacing.md.rawValue)
+        .background(
+            RoundedRectangle(cornerRadius: HDRadius.md.rawValue, style: .continuous)
+                .fill(HDColor.paleGreen)
+        )
     }
 
     private var actionLabel: String {
@@ -230,6 +280,13 @@ struct MainPopoverView: View {
     private var footer: some View {
         VStack(spacing: HDSpacing.sm.rawValue) {
             Divider()
+
+            // Hotkey hint — visible until the user has used the
+            // global hotkey at least once. Audit #17.
+            if !hotkeyHintDismissed {
+                hotkeyHint
+            }
+
             HStack {
                 Text("v2.0 · \(statsObserver.stats.totalWords) слов всего")
                     .font(HDFont.micro)
@@ -241,6 +298,38 @@ struct MainPopoverView: View {
                 }
             }
         }
+    }
+
+    @AppStorage("mywhi.hotkeyHintShown") private var hotkeyHintDismissed: Bool = false
+
+    private var hotkeyHint: some View {
+        HStack(spacing: HDSpacing.sm.rawValue) {
+            Image(systemName: "keyboard")
+                .font(.system(size: 12))
+                .foregroundStyle(HDColor.coral)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Глобальный hotkey")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(HDColor.ink)
+                Text("Нажми ⌘⌥D из любого приложения")
+                    .font(.system(size: 10))
+                    .foregroundStyle(HDColor.muted)
+            }
+            Spacer()
+            Button {
+                hotkeyHintDismissed = true
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 12))
+                    .foregroundStyle(HDColor.muted)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(HDSpacing.sm.rawValue)
+        .background(
+            RoundedRectangle(cornerRadius: HDRadius.xs.rawValue, style: .continuous)
+                .fill(HDColor.paleGreen)
+        )
     }
 }
 
