@@ -253,6 +253,18 @@ final class AppState: ObservableObject {
                 )
                 self.lastTranscript = text
 
+                // Empty result handling: if WhisperKit returned no text
+                // (silence, very short clip, or hallucination), don't
+                // pretend the transcription succeeded. Show an
+                // informative error so the user knows what happened.
+                if text.isEmpty {
+                    NSLog("MyWhi.AppState: empty transcription (engine=\(engine), model=\(model), file=\(filename))")
+                    self.status = .error
+                    self.errorMessage = "Не удалось распознать речь. Попробуй говорить громче или дольше."
+                    HapticFeedback.error.fire()
+                    return
+                }
+
                 if autoCopy && !text.isEmpty {
                     self.clipboard.copy(text)
                     if settings.autoPaste {

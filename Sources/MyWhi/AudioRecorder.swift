@@ -175,6 +175,12 @@ final class AudioRecorder: NSObject, ObservableObject {
         // Reap old files so /tmp doesn't grow unbounded.
         reapOldRecordings()
 
+        // Reset diagnostic counters for this recording.
+        liveWriteCounter = 0
+        skipWriteCounter = 0
+        fileWriteCompletedCount = 0
+        NSLog("MyWhi.AudioRecorder: start() called, isEngineStarted=\(isEngineStarted), preRollCapacity=\(preRollCapacity)")
+
         // Engine might not be running yet (cold start before prepare()
         // completed). Start it; the user expects no latency on first
         // press.
@@ -311,14 +317,36 @@ final class AudioRecorder: NSObject, ObservableObject {
         // If recording, hand off to the file queue.
         let isRec = recordingLock.withLock { isRecordingFlag }
         if isRec {
+            // Diagnostic: first few live writes after start. Helps
+            // catch "tap not firing" / "flag not set" race conditions.
+            let liveWriteCount = liveWriteCounter
+            liveWriteCounter += 1
+            if liveWriteCount < 5 {
+                NSLog("MyWhi.AudioRecorder: live tap #\(liveWriteCount) — \(frameCount) frames @ \(sampleRate)Hz, isRec=true")
+            }
             fileQueue.async { [weak self] in
                 self?.writeSamplesToFileOnQueue(samples: newSamples, sampleRate: sampleRate)
             }
+        } else {
+            // Track how many taps fired while NOT recording (should be
+            // many; useful for catching "engine never started" issues).
+            skipWriteCounter += 1
         }
     }
 
+    // Diagnostic counters (lock-free single-writer reads).
+    nonisolated(unsafe) private var liveWriteCounter: Int = 0
+    nonisolated(unsafe) private var skipWriteCounter: Int = 0
+    nonisolated(unsafe) private var fileWriteCompletedCount: Int = 0
+
     /// Resample and write a chunk of input samples to the open file.
     /// Must be called on `fileQueue`.
+    ///
+    /// CRITICAL: do NOT signal `endOfStream` here. AVAudioConverter
+    /// goes into a "done" state once endOfStream is set, and refuses
+    /// to accept further input. That made every live chunk after the
+    /// pre-roll flush produce 0 output frames. We only signal
+    /// endOfStream on the final chunk in `stop()`.
     private nonisolated func writeSamplesToFileOnQueue(samples: [Float], sampleRate: Double) {
         guard let file = audioFile, let converter = converter else { return }
 
@@ -355,8 +383,12 @@ final class AudioRecorder: NSObject, ObservableObject {
         var error: NSError?
         var consumed = false
         let status = converter.convert(to: outBuffer, error: &error) { _, outStatus in
+            // Only the first call returns the input. Subsequent calls
+            // are endOfStream probes — but we intentionally do NOT
+            // signal endOfStream so the converter stays ready for the
+            // next chunk. The last chunk's flush happens in stop().
             if consumed {
-                outStatus.pointee = .endOfStream
+                outStatus.pointee = .noDataNow
                 return nil
             }
             consumed = true
@@ -370,6 +402,7 @@ final class AudioRecorder: NSObject, ObservableObject {
 
         do {
             try file.write(from: outBuffer)
+            fileWriteCompletedCount += 1
         } catch {
             NSLog("MyWhi.AudioRecorder: file.write failed: \(error)")
         }
