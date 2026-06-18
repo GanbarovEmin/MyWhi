@@ -70,9 +70,16 @@ final class AppState: ObservableObject {
             .store(in: &cancellables)
 
         // Pre-load the engine in the background so the first recording is fast.
-        Task { @MainActor [weak self] in
+        // We seed preloadTask up front so that ensureEngineLoaded() called
+        // from transcribeFile (race: user records in the first 7s) awaits
+        // the same Task instead of starting a parallel load.
+        preloadTask = Task { @MainActor [weak self] in
             await self?.preloadEngine()
         }
+
+        // One-time: remove the legacy /tmp/hermes-dictate folder from
+        // the v1.0 codebase. The new path is /tmp/mywhi/recordings.
+        cleanupLegacyRecordingsDir()
 
         // Run one-time migration from history.json → vault, then refresh.
         Task { @MainActor [weak self] in
@@ -81,15 +88,43 @@ final class AppState: ObservableObject {
         }
     }
 
+    private func cleanupLegacyRecordingsDir() {
+        let legacy = URL(fileURLWithPath: "/tmp/hermes-dictate", isDirectory: true)
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: legacy.path) else { return }
+        // Move files into the new dir if they exist (preserves user's
+        // last recording for "Transcribe Last" feature), then remove the
+        // empty legacy dir.
+        do {
+            let contents = try fm.contentsOfDirectory(at: legacy, includingPropertiesForKeys: nil)
+            for url in contents {
+                let dest = AudioRecorder.recordingsDir.appendingPathComponent(url.lastPathComponent)
+                try? fm.moveItem(at: url, to: dest)
+            }
+            try fm.removeItem(at: legacy)
+            NSLog("MyWhi.AppState: migrated legacy /tmp/hermes-dictate → /tmp/mywhi/recordings")
+        } catch {
+            NSLog("MyWhi.AppState: legacy cleanup failed: \(error)")
+        }
+    }
+
     private var cancellables = Set<AnyCancellable>()
+
+    // Single in-flight preload so a recording that starts before preload
+    // completes can await the same Task instead of triggering a parallel
+    // engine swap. See #8 in audit.
+    private var preloadTask: Task<Void, Never>?
 
     // MARK: - Engine
 
+    /// Preload the engine on first use (called from init and from Settings
+    /// when the user changes engine/model). Idempotent — concurrent callers
+    /// share the same Task.
     private func preloadEngine() async {
         NSLog("MyWhi.AppState: preloadEngine starting (engine=\(settings.engine), model=\(settings.modelSize))")
         do {
             try await engineManager.setEngine(settings.engine, model: settings.modelSize)
-            self.activeEngineName = engineManager.activeName
+            self.activeEngineName = engineManager.displayName
             self.engineDidFallback = engineManager.didFallback
             NSLog("MyWhi.AppState: preloadEngine done — active=\(activeEngineName), fallback=\(engineDidFallback)")
         } catch {
@@ -98,8 +133,28 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// Public entry point — coalesces concurrent preload requests. Returns
+    /// once the engine is loaded (or failed). Safe to await from anywhere
+    /// on the main actor.
+    func ensureEngineLoaded() async {
+        if let task = preloadTask {
+            await task.value
+            return
+        }
+        let task: Task<Void, Never> = Task { @MainActor [weak self] in
+            await self?.preloadEngine()
+        }
+        preloadTask = task
+        await task.value
+        // Don't clear preloadTask — we want subsequent calls to share it
+        // until the user changes engine/model.
+    }
+
     /// Called from Settings when the user changes engine or model.
     func reloadEngine() async {
+        // Invalidate the in-flight preload so a new (name, model) pair
+        // triggers a fresh load instead of returning a cached engine.
+        preloadTask = nil
         await preloadEngine()
     }
 
@@ -169,9 +224,15 @@ final class AppState: ObservableObject {
 
         Task { @MainActor in
             do {
-                // Ensure the engine is loaded with the configured model.
+                // Wait for any in-flight preload to finish (avoids a
+                // race where a recording starts before the model is
+                // ready — we'd hit the UnloadedTranscriber and throw).
+                await ensureEngineLoaded()
+
+                // Now setEngine() will be a cache hit on subsequent
+                // recordings (no 6s re-init) — see EngineManager caching.
                 try await engineManager.setEngine(engine, model: model)
-                self.activeEngineName = engineManager.activeName
+                self.activeEngineName = engineManager.displayName
                 self.engineDidFallback = engineManager.didFallback
 
                 let text = try await engineManager.transcribe(

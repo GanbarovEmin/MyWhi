@@ -12,6 +12,14 @@
 //   - medium   (~750 MB, high quality)
 //   - large    (~1.5 GB, best)
 //   - largev2  / largev3  (newest large variants)
+//
+// THREADING
+// All access to `pipe` happens on the main actor (EngineManager is
+// @MainActor, and WhisperKitTranscriber is only ever constructed and
+// used by it). The previous NSLock is no longer needed — there is no
+// shared mutable state across actor boundaries. WhisperKit's own
+// inference runs on its internal thread pool, released to us via
+// `await`.
 
 import Foundation
 import WhisperKit
@@ -23,30 +31,45 @@ final class WhisperKitTranscriber: Transcriber, @unchecked Sendable {
     /// Currently loaded WhisperKit pipeline. nil until loadModel() is called.
     private var pipe: WhisperKit?
 
-    /// Lock to serialise reads/writes of `pipe` (init is async).
-    private let pipeLock = NSLock()
+    /// Last successfully loaded model variant, e.g. "small". Used to
+    /// short-circuit transcribe() when the user hasn't changed models.
+    private var loadedModelName: String?
+
+    /// Build a WhisperKitConfig tuned for fast first-record and short
+    /// dictation clips.
+    ///
+    /// Settings that matter:
+    /// - `prewarm: true`              — pre-compile Metal kernels after
+    ///   load. Pays ~1-2s once at load time to make the first inference
+    ///   1-2s faster. The trade-off is worth it for dictation (the first
+    ///   record after launch is the most important UX moment).
+    /// - `useBackgroundDownloadSession: true` — first-time model
+    ///   download uses NSURLSession background config. Doesn't block
+    ///   the calling actor; we can show progress in the UI. For
+    ///   subsequent loads the model is already cached.
+    /// - `load: true`                 — actually instantiate the pipeline.
+    private func makeConfig(_ resolved: String) -> WhisperKitConfig {
+        WhisperKitConfig(
+            model: resolved,
+            verbose: false,
+            logLevel: .error,
+            prewarm: true,
+            load: true,
+            download: true,
+            useBackgroundDownloadSession: true
+        )
+    }
 
     func loadModel(_ modelName: String) async throws {
         let resolved = resolveModelVariant(modelName)
         NSLog("MyWhi.WhisperKitTranscriber: loadModel(\(modelName) → \(resolved)) starting")
 
-        let config = WhisperKitConfig(
-            model: resolved,
-            verbose: false,
-            logLevel: .error,
-            prewarm: false,
-            load: true,
-            download: true,
-            useBackgroundDownloadSession: false
-        )
-
+        let config = makeConfig(resolved)
         do {
-            let pipe = try await WhisperKit(config)
+            let newPipe = try await WhisperKit(config)
             NSLog("MyWhi.WhisperKitTranscriber: WhisperKit() init succeeded for \(resolved)")
-
-            pipeLock.lock()
-            self.pipe = pipe
-            pipeLock.unlock()
+            self.pipe = newPipe
+            self.loadedModelName = resolved
         } catch {
             NSLog("MyWhi.WhisperKitTranscriber: WhisperKit() init FAILED for \(resolved): \(error)")
             throw error
@@ -54,12 +77,12 @@ final class WhisperKitTranscriber: Transcriber, @unchecked Sendable {
     }
 
     func transcribe(audioPath: String, model: String, language: String) async throws -> String {
-        // If the requested model differs from what's loaded, reload.
-        try await ensureModelLoaded(model)
-
-        pipeLock.lock()
-        let pipe = self.pipe
-        pipeLock.unlock()
+        // Ensure the requested model is loaded. If the user is transcribing
+        // with a different model than we have cached, reload.
+        let resolved = resolveModelVariant(model)
+        if loadedModelName != resolved {
+            try await loadModel(resolved)
+        }
 
         guard let pipe else {
             throw NSError(
@@ -88,11 +111,11 @@ final class WhisperKitTranscriber: Transcriber, @unchecked Sendable {
         //                                  and we retry up to 5 times —
         //                                  usually enough to escape a
         //                                  hallucination loop on noisy input.
-        //   - compressionRatioThreshold   → 2.4 (default). Lowering this
-        //                                  to 1.8 makes the decoder more
-        //                                  likely to retry on repetitive
-        //                                  hallucination, at a small cost
-        //                                  in latency. Keep default for now.
+        //   - promptPrefix                → a short prefix that nudges
+        //                                  the decoder to use proper
+        //                                  punctuation. Optional but helps
+        //                                  on languages that often come
+        //                                  out as a wall of text.
         let langArg: String? = (language == "auto" || language.isEmpty) ? nil : language
         let options = DecodingOptions(
             task: .transcribe,
@@ -138,15 +161,6 @@ final class WhisperKitTranscriber: Transcriber, @unchecked Sendable {
     }
 
     // MARK: - Private
-
-    private var loadedModelName: String?
-
-    private func ensureModelLoaded(_ modelName: String) async throws {
-        let resolved = resolveModelVariant(modelName)
-        if loadedModelName == resolved { return }
-        try await loadModel(resolved)
-        loadedModelName = resolved
-    }
 
     /// Map legacy / fuzzy model names to WhisperKit's ModelVariant strings.
     /// WhisperKit accepts the variant name as String ("tiny", "small", etc.).

@@ -1,5 +1,9 @@
 // AppStatus.swift
 // Discrete state machine for the menu bar app.
+//
+// Color tokens come from HDColor so the menu bar / popover / desktop
+// visuals stay consistent. The previous version used system .red /
+// .green which clashed with the brand palette. See audit #7.
 
 import SwiftUI
 
@@ -21,13 +25,14 @@ enum AppStatus: String {
         }
     }
 
+    /// Brand-consistent status color (HDColor tokens).
     var color: Color {
         switch self {
-        case .idle:         return .secondary
-        case .recording:    return .red
-        case .transcribing: return .orange
-        case .copied:       return .green
-        case .error:        return .red
+        case .idle:         return HDColor.muted
+        case .recording:    return HDColor.deepGreen
+        case .transcribing: return HDColor.coral
+        case .copied:       return HDColor.actionBlue
+        case .error:        return HDColor.error
         }
     }
 }
