@@ -66,15 +66,15 @@ struct ScratchpadDetailView: View {
                     .hdTracking(0.4)
                     .foregroundStyle(HDColor.muted)
 
-                Text(enginePill(note.frontmatter.engine))
+                Text(enginePillName)
                     .font(.system(size: 10, weight: .medium))
                     .padding(.horizontal, HDSpacing.xs.rawValue + 2)
                     .padding(.vertical, 2)
                     .background(
                         Capsule()
-                            .fill(note.frontmatter.engine == "whisperkit" ? HDColor.paleGreen : HDColor.paleBlue)
+                            .fill(enginePillColor.0)
                     )
-                    .foregroundStyle(note.frontmatter.engine == "whisperkit" ? HDColor.deepGreen : HDColor.actionBlue)
+                    .foregroundStyle(enginePillColor.1)
 
                 Text("· \(note.frontmatter.model)")
                     .font(.system(size: 10, weight: .medium))
@@ -201,7 +201,20 @@ struct ScratchpadDetailView: View {
         return f.string(from: date)
     }
 
-    private func enginePill(_ engine: String) -> String {
-        engine == "whisperkit" ? "WhisperKit" : "Python"
+    private var enginePillColor: (Color, Color) {
+        // Compare against the display name (capital W/K) that
+        // WhisperKitTranscriber.name and PythonTranscriber.name
+        // actually return. Settings stores the code ("whisperkit"
+        // / "faster-whisper") but the frontmatter persists the
+        // display name, so the UI must match against the same
+        // string the transcriber emits.
+        if note.frontmatter.engine == "WhisperKit" {
+            return (HDColor.paleGreen, HDColor.deepGreen)
+        }
+        return (HDColor.paleBlue, HDColor.actionBlue)
+    }
+
+    private var enginePillName: String {
+        note.frontmatter.engine
     }
 }

@@ -118,6 +118,9 @@ private struct ScratchpadRow: View {
                     .foregroundStyle(HDColor.muted)
                 Spacer()
                 if note.frontmatter.engine == "faster-whisper" {
+                    // only show "py" pill for the Python engine.
+                    // WhisperKit recordings get no badge to keep the row
+                    // visually quiet (WhisperKit is the default).
                     Text("py")
                         .font(.system(size: 9, weight: .medium))
                         .padding(.horizontal, 4)
