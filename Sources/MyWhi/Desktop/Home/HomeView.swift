@@ -208,14 +208,13 @@ struct HomeView: View {
     private func transcribeFile(at url: URL) async {
         let model = appState.settings.modelSize
         let language = appState.settings.language
-        let engine = appState.settings.engine
 
         appState.objectWillChange.send()
         // We don't have a direct "transcribing from file" hook on AppState,
         // but we can reuse the same engine pipeline. This re-implements
         // AppState.transcribeFile in the public shape.
         do {
-            try await appState.engineManager.setEngine(engine, model: model)
+            try await appState.engineManager.setEngine("whisperkit", model: model)
             let text = try await appState.engineManager.transcribe(
                 audioPath: url.path,
                 model: model,

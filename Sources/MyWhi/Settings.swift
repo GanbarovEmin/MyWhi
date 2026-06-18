@@ -1,6 +1,11 @@
 // AppSettings.swift
 // Persisted user preferences. Class (not struct) so SwiftUI bindings work
 // directly through @Published, and so onChange fires on any field update.
+//
+// v2.0: faster-whisper removed. WhisperKit is the only engine — the
+// `engine` setting and `pythonPath` are gone. Existing settings.json
+// files that still carry them decode without error but the values
+// are ignored (they're not in CodingKeys).
 
 import Foundation
 import Combine
@@ -10,7 +15,6 @@ final class AppSettings: ObservableObject, Codable {
 
     // MARK: Engine
 
-    @Published var engine: String                  // "whisperkit" or "faster-whisper"
     @Published var modelSize: String               // tiny|base|small|medium|large-v3|...
     @Published var language: String                // ru | en | auto
 
@@ -28,20 +32,8 @@ final class AppSettings: ObservableObject, Codable {
     /// macOS virtual key code. Default 0x02 = D key.
     @Published var hotkeyKeyCode: UInt32
 
-    // MARK: Paths
-
-    @Published var pythonPath: String              // venv python (for faster-whisper fallback)
-
     // MARK: Available values
 
-    static let availableEngines: [(code: String, label: String)] = [
-        ("whisperkit",    "WhisperKit (on-device, recommended)"),
-        ("faster-whisper", "faster-whisper (Python fallback)"),
-    ]
-
-    /// Available model sizes. Each entry is (code, label, description)
-    /// so the Settings picker can show size + speed + quality without
-    /// inventing content (audit #15).
     static let availableModels: [(code: String, label: String, description: String)] = [
         ("tiny",            "tiny",            "~40 MB · fastest · lower accuracy"),
         ("base",            "base",            "~75 MB · fast · decent"),
@@ -57,28 +49,18 @@ final class AppSettings: ObservableObject, Codable {
         ("auto", "Auto-detect"),
     ]
 
-    static let defaultPythonPath: String = {
-        let home = NSHomeDirectory()
-        return "\(home)/Documents/MyWhi/venv/bin/python3"
-    }()
-
     init(
-        engine: String = "whisperkit",
         modelSize: String = "small",
         language: String = "ru",
         autoCopy: Bool = true,
         saveHistory: Bool = true,
         autoPaste: Bool = false,
-        pythonPath: String = AppSettings.defaultPythonPath,
         useDarkMode: Bool = false,
         hotkeyModifiers: UInt32 = UInt32(cmdKey | optionKey),
         hotkeyKeyCode: UInt32 = 0x02   // kVK_ANSI_D
     ) {
         // Validate inputs against known values; fall back to defaults so
         // a hand-edited settings file cannot crash the app.
-        let validEngines = AppSettings.availableEngines.map(\.code)
-        self.engine = validEngines.contains(engine) ? engine : "whisperkit"
-
         let validModels = AppSettings.availableModels.map(\.code)
         self.modelSize = validModels.contains(modelSize) ? modelSize : "small"
 
@@ -88,7 +70,6 @@ final class AppSettings: ObservableObject, Codable {
         self.autoCopy = autoCopy
         self.saveHistory = saveHistory
         self.autoPaste = autoPaste
-        self.pythonPath = pythonPath.isEmpty ? AppSettings.defaultPythonPath : pythonPath
         self.useDarkMode = useDarkMode
         self.hotkeyModifiers = hotkeyModifiers
         self.hotkeyKeyCode = hotkeyKeyCode
@@ -131,23 +112,25 @@ final class AppSettings: ObservableObject, Codable {
     }
 
     // MARK: - Codable
+    //
+    // `engine` and `pythonPath` are intentionally NOT in CodingKeys.
+    // They were dropped in v2.0. Old settings.json files that still
+    // contain them decode without error (ignored) and will be cleaned
+    // up the next time `save()` runs.
 
     enum CodingKeys: String, CodingKey {
-        case engine, modelSize, language, autoCopy, saveHistory, autoPaste, pythonPath, useDarkMode,
+        case modelSize, language, autoCopy, saveHistory, autoPaste, useDarkMode,
              hotkeyModifiers, hotkeyKeyCode
     }
 
     convenience init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.init(
-            engine: try c.decodeIfPresent(String.self, forKey: .engine) ?? "whisperkit",
             modelSize: try c.decodeIfPresent(String.self, forKey: .modelSize) ?? "small",
             language: try c.decodeIfPresent(String.self, forKey: .language) ?? "ru",
             autoCopy: try c.decodeIfPresent(Bool.self, forKey: .autoCopy) ?? true,
             saveHistory: try c.decodeIfPresent(Bool.self, forKey: .saveHistory) ?? true,
             autoPaste: try c.decodeIfPresent(Bool.self, forKey: .autoPaste) ?? false,
-            pythonPath: try c.decodeIfPresent(String.self, forKey: .pythonPath)
-                ?? AppSettings.defaultPythonPath,
             useDarkMode: try c.decodeIfPresent(Bool.self, forKey: .useDarkMode) ?? false,
             hotkeyModifiers: try c.decodeIfPresent(UInt32.self, forKey: .hotkeyModifiers)
                 ?? UInt32(cmdKey | optionKey),
@@ -158,13 +141,11 @@ final class AppSettings: ObservableObject, Codable {
 
     func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
-        try c.encode(engine, forKey: .engine)
         try c.encode(modelSize, forKey: .modelSize)
         try c.encode(language, forKey: .language)
         try c.encode(autoCopy, forKey: .autoCopy)
         try c.encode(saveHistory, forKey: .saveHistory)
         try c.encode(autoPaste, forKey: .autoPaste)
-        try c.encode(pythonPath, forKey: .pythonPath)
         try c.encode(useDarkMode, forKey: .useDarkMode)
         try c.encode(hotkeyModifiers, forKey: .hotkeyModifiers)
         try c.encode(hotkeyKeyCode, forKey: .hotkeyKeyCode)

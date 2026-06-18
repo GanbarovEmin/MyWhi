@@ -1,16 +1,8 @@
 // EngineDisplayNameTests.swift
-// Regression: the frontmatter stores the engine *display name*
-// (e.g. "WhisperKit", "faster-whisper") returned by
-// Transcriber.name. The settings stores the engine *code*
-// (e.g. "whisperkit"). UI code that compares the frontmatter
-// value to a code literal needs to compare against the display
-// name, not the code — otherwise it always shows the "wrong"
-// engine label (e.g. the pill in ScratchpadDetailView used to
-// say "Python" for every WhisperKit recording).
-//
-// We pin the exact strings here so any future change to either
-// Transcriber.name or the UI comparison fails a test instead of
-// silently showing the wrong label.
+// Pins the display name `WhisperKitTranscriber.name` returns. The
+// frontmatter persists this exact string and the UI compares against
+// it (ScratchpadDetailView), so any future change to it must fail
+// a test instead of silently showing the wrong engine label.
 
 import XCTest
 @testable import MyWhi
@@ -26,24 +18,6 @@ final class EngineDisplayNameTests: XCTestCase {
                        + "Changing it changes every existing vault file's engine frontmatter label.")
     }
 
-    /// The display name PythonTranscriber returns.
-    func testPythonTranscriberName() {
-        let t = PythonTranscriber(pythonPath: "/nonexistent")
-        XCTAssertEqual(t.name, "faster-whisper",
-                       "PythonTranscriber.name must stay 'faster-whisper'.")
-    }
-
-    /// The list view checks `engine == "faster-whisper"`. That's the
-    /// display name, so this should match. (Past bug: the detail
-    /// view checked `"whisperkit"` — the code — which never matched
-    /// the stored display name "WhisperKit".)
-    func testFasterWhisperBadgeMatch() {
-        let t = PythonTranscriber(pythonPath: "/nonexistent")
-        XCTAssertEqual(t.name, "faster-whisper",
-                       "ScratchpadListView's 'py' badge condition must match the display name.")
-    }
-
-    /// ScratchpadDetailView's enginePillColor / enginePillName.
     /// Round-trips through a real TranscriptFrontmatter to make
     /// sure the strings the UI compares against are exactly what
     /// the transcriber emits.

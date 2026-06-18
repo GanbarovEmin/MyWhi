@@ -3,8 +3,9 @@
 // don't pay the 6-7s model-init cost on every recording — the cache
 // only reloads when the user actually changes engine or model size.
 //
-// Also handles the WhisperKit → faster-whisper fallback when the
-// primary engine fails to load.
+// v2.0: faster-whisper removed. WhisperKit is the only engine.
+// The fallback path and Python subprocess plumbing are gone —
+// the app is now single-engine, single-process.
 
 import Foundation
 import Combine
@@ -24,27 +25,25 @@ final class EngineManager: ObservableObject {
     /// Human-readable name shown in the UI, e.g. "WhisperKit".
     @Published private(set) var displayName: String
 
-    /// True when we fell back from WhisperKit → faster-whisper after
-    /// a load error. Surfaces a warning in the UI.
-    @Published private(set) var didFallback: Bool = false
-
     /// True while a model is being loaded (downloaded, compiled, warmed).
     /// Settings can use this to show a progress bar.
     @Published private(set) var isLoading: Bool = false
 
-    private let pythonPath: String
+    /// v2.0: no fallback engine, so didFallback is always false.
+    /// Kept as a @Published for API stability with the UI (the
+    /// sidebar footer still observes it but never shows anything).
+    @Published private(set) var didFallback: Bool = false
 
     /// Factory closure: given an engine code, return a fresh Transcriber.
-    /// Default builds WhisperKitTranscriber / PythonTranscriber. Tests
-    /// override this to inject fakes.
-    var makeEngine: (String) -> Transcriber
+    /// Default builds WhisperKitTranscriber. Tests override this to
+    /// inject fakes.
+    nonisolated(unsafe) var makeEngine: (String) -> Transcriber
 
-    init(pythonPath: String) {
-        self.pythonPath = pythonPath
+    init() {
+        // Default factory: only WhisperKit is supported.
         self.makeEngine = { code in
             switch code {
             case "whisperkit":    return WhisperKitTranscriber()
-            case "faster-whisper": return PythonTranscriber(pythonPath: pythonPath)
             default:
                 return UnloadedTranscriber()
             }
@@ -59,16 +58,14 @@ final class EngineManager: ObservableObject {
         self.displayName = "Loading…"
     }
 
-    /// Swap to a different engine (WhisperKit or Python) and load the model.
-    /// No-op if the requested (name, model) pair matches the active one AND
-    /// we didn't previously fall back.
+    /// Swap to a different engine and load the model. No-op if the
+    /// requested (name, model) pair matches the active one.
     func setEngine(_ name: String, model: String) async throws {
         let startTime = Date()
         NSLog("MyWhi.EngineManager: setEngine(name=\(name), model=\(model)) — active=\(activeEngineName)/\(activeModel)")
 
-        // Cache hit: same engine + same model, and we didn't fall back
-        // (fallback is one-shot — next call should retry the primary).
-        if name == activeEngineName && model == activeModel && !didFallback && !(active is UnloadedTranscriber) {
+        // Cache hit: same engine + same model → skip reload.
+        if name == activeEngineName && model == activeModel && !(active is UnloadedTranscriber) {
             NSLog("MyWhi.EngineManager: cache hit, skip reload")
             return
         }
@@ -85,25 +82,14 @@ final class EngineManager: ObservableObject {
             )
         }
 
-        // Try loading on the new engine; if it fails AND we were on WhisperKit,
-        // fall back to Python.
         do {
             NSLog("MyWhi.EngineManager: calling loadModel on \(newEngine.name)…")
             try await newEngine.loadModel(model)
             NSLog("MyWhi.EngineManager: loadModel succeeded in \(String(format: "%.2f", Date().timeIntervalSince(startTime)))s")
         } catch {
             NSLog("MyWhi.EngineManager: loadModel FAILED on \(newEngine.name): \(error)")
-            if name == "whisperkit" {
-                NSLog("MyWhi.EngineManager: WhisperKit load failed, falling back to faster-whisper.")
-                let fallback = makeEngine("faster-whisper")
-                try await fallback.loadModel(model)
-                self.active = fallback
-                self.activeEngineName = fallback.name
-                self.activeModel = model
-                self.displayName = fallback.name
-                self.didFallback = true
-                return
-            }
+            // No fallback engine in v2.0 — propagate the error so the
+            // user can see it in the UI.
             throw error
         }
 
@@ -111,18 +97,12 @@ final class EngineManager: ObservableObject {
         self.activeEngineName = newEngine.name
         self.activeModel = model
         self.displayName = newEngine.name
-        self.didFallback = false
     }
 
     /// Run transcription with the active engine.
     func transcribe(audioPath: String, model: String, language: String) async throws -> String {
         try await active.transcribe(audioPath: audioPath, model: model, language: language)
     }
-
-    static let availableEngines: [(code: String, label: String)] = [
-        ("whisperkit",    "WhisperKit (on-device)"),
-        ("faster-whisper", "faster-whisper (Python)"),
-    ]
 }
 
 /// Placeholder used until the first setEngine() call completes. Lets

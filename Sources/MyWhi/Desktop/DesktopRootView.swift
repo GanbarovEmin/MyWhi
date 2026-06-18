@@ -103,20 +103,17 @@ struct DesktopRootView: View {
 
             Spacer()
 
-            // Footer
+            // v2.0: no engine switcher / fallback indicator. WhisperKit
+            // is always the engine. We show the engine name and the
+            // current model in the footer for reference.
             VStack(alignment: .leading, spacing: HDSpacing.xs.rawValue) {
                 HStack(spacing: HDSpacing.xs.rawValue) {
-                    Image(systemName: appState.activeEngineName == "WhisperKit" ? "bolt.fill" : "tortoise.fill")
+                    Image(systemName: "bolt.fill")
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(HDColor.muted)
-                    Text(appState.activeEngineName)
+                    Text("\(appState.activeEngineName) · \(appState.settings.modelSize)")
                         .font(HDFont.micro)
                         .foregroundStyle(HDColor.muted)
-                }
-                if appState.engineDidFallback {
-                    Text("Fallback active")
-                        .font(.system(size: 10))
-                        .foregroundStyle(HDColor.coral)
                 }
             }
             .padding(HDSpacing.lg.rawValue)

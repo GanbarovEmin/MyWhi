@@ -38,13 +38,5 @@
     <false/>
     <key>NSSupportsSuddenTermination</key>
     <false/>
-    <!-- HDPythonPath is read by the app at launch to locate the venv python.
-         Used as fallback engine (faster-whisper). Default falls back to
-         ~/Documents/MyWhi/venv/bin/python3 if not present. -->
-    <key>HDPythonPath</key>
-    <string>/Users/eminganbarov/Documents/MyWhi/venv/bin/python3</string>
-    <!-- HDTranscribeScript is the bundled transcribe.py in Contents/Resources. -->
-    <key>HDTranscribeScript</key>
-    <string>transcribe.py</string>
 </dict>
 </plist>

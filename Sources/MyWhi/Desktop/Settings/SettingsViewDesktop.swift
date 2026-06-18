@@ -59,17 +59,25 @@ struct SettingsViewDesktop: View {
     private var engineSection: some View {
         HDCard(.canvas) {
             VStack(alignment: .leading, spacing: HDSpacing.lg.rawValue) {
-                sectionTitle("Движок транскрибации")
+                sectionTitle("Модель")
 
-                Picker("Engine", selection: engineBinding) {
-                    ForEach(EngineManager.availableEngines, id: \.code) { engine in
-                        Text(engine.label).tag(engine.code)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .disabled(appState.engineManager.isLoading)
-                .onChange(of: appState.settings.engine) { _, _ in
-                    Task { await appState.reloadEngine() }
+                // v2.0: WhisperKit is the only engine. No picker —
+                // we just show the model selection. The "WhisperKit"
+                // badge below the picker makes the engine choice
+                // visible without taking screen real estate.
+                HStack {
+                    Text("Движок")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(HDColor.ink)
+                    Spacer()
+                    Text("WhisperKit")
+                        .font(HDFont.monoLabel(size: 12, weight: .medium))
+                        .padding(.horizontal, HDSpacing.sm.rawValue)
+                        .padding(.vertical, 2)
+                        .background(
+                            Capsule().fill(HDColor.paleGreen)
+                        )
+                        .foregroundStyle(HDColor.deepGreen)
                 }
 
                 Picker("Model", selection: modelBinding) {
@@ -109,26 +117,11 @@ struct SettingsViewDesktop: View {
                     }
                     .padding(.vertical, HDSpacing.xs.rawValue)
                 }
-
-                if appState.engineDidFallback {
-                    HStack(spacing: HDSpacing.xs.rawValue) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(HDColor.coral)
-                        Text("WhisperKit недоступен — используется fallback.")
-                            .font(HDFont.caption)
-                            .foregroundStyle(HDColor.coral)
-                    }
-                }
             }
         }
     }
 
-    private var engineBinding: Binding<String> {
-        Binding(
-            get: { appState.settings.engine },
-            set: { appState.settings.engine = $0 }
-        )
-    }
+    // v2.0: no engineBinding — WhisperKit is the only engine.
 
     private var modelBinding: Binding<String> {
         Binding(

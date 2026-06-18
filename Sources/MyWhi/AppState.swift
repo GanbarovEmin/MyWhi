@@ -51,7 +51,7 @@ final class AppState: ObservableObject {
     init() {
         let loaded = AppSettings.load()
         self.settings = loaded
-        self.engineManager = EngineManager(pythonPath: loaded.pythonPath)
+        self.engineManager = EngineManager()
         self.historyStore = HistoryStore()
         self.clipboard = ClipboardService()
         let vs = VaultStore()
@@ -121,9 +121,9 @@ final class AppState: ObservableObject {
     /// when the user changes engine/model). Idempotent — concurrent callers
     /// share the same Task.
     private func preloadEngine() async {
-        NSLog("MyWhi.AppState: preloadEngine starting (engine=\(settings.engine), model=\(settings.modelSize))")
+        NSLog("MyWhi.AppState: preloadEngine starting (engine=whisperkit, model=\(settings.modelSize))")
         do {
-            try await engineManager.setEngine(settings.engine, model: settings.modelSize)
+            try await engineManager.setEngine("whisperkit", model: settings.modelSize)
             self.activeEngineName = engineManager.displayName
             self.engineDidFallback = engineManager.didFallback
             NSLog("MyWhi.AppState: preloadEngine done — active=\(activeEngineName), fallback=\(engineDidFallback)")
@@ -230,7 +230,6 @@ final class AppState: ObservableObject {
         let language = settings.language
         let autoCopy = settings.autoCopy
         let saveHistory = settings.saveHistory
-        let engine = settings.engine
         let filename = url.lastPathComponent
 
         Task { @MainActor in
@@ -240,9 +239,8 @@ final class AppState: ObservableObject {
                 // ready — we'd hit the UnloadedTranscriber and throw).
                 await ensureEngineLoaded()
 
-                // Now setEngine() will be a cache hit on subsequent
-                // recordings (no 6s re-init) — see EngineManager caching.
-                try await engineManager.setEngine(engine, model: model)
+                // Cache hit on subsequent recordings (no 6s re-init).
+                try await engineManager.setEngine("whisperkit", model: model)
                 self.activeEngineName = engineManager.displayName
                 self.engineDidFallback = engineManager.didFallback
 
@@ -258,7 +256,7 @@ final class AppState: ObservableObject {
                 // pretend the transcription succeeded. Show an
                 // informative error so the user knows what happened.
                 if text.isEmpty {
-                    NSLog("MyWhi.AppState: empty transcription (engine=\(engine), model=\(model), file=\(filename))")
+                    NSLog("MyWhi.AppState: empty transcription (engine=whisperkit, model=\(model), file=\(filename))")
                     self.status = .error
                     self.errorMessage = "Не удалось распознать речь. Попробуй говорить громче или дольше."
                     HapticFeedback.error.fire()

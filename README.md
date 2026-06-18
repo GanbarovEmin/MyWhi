@@ -2,13 +2,13 @@
 
 A native macOS dictation app. Local-only, on-device Whisper inference, Markdown-vault history. No cloud, no telemetry, no Electron.
 
-> **v2.0-alpha** — full desktop app with sidebar, Markdown vault, GitHub-style Insights, drag-and-drop import, global hotkey. See `.hermes/plans/2026-06-17_135054-mywhi-v2.md` for the design doc.
+> **v2.0** — single-engine (WhisperKit only). faster-whisper removed: WhisperKit turned out to be faster AND more accurate in our testing. See `.hermes/plans/2026-06-17_135054-mywhi-v2.md` for the design doc.
 
 ## What it does
 
 - **Menu bar** — click the mic icon, speak, click again. Text lands in your clipboard.
 - **Desktop window** — sidebar with Запись / Scratchpad / Insights / Настройки. Open via menu bar right-click → "Open MyWhi", or `Cmd+Option+D` from anywhere.
-- **WhisperKit** primary engine (on-device, 2-5× faster than Python); **faster-whisper** auto-fallback if WhisperKit fails.
+- **Engine**: WhisperKit (on-device, native Swift, 2-5× faster than Python alternatives)
 - **Markdown vault** — every transcript lives as a real `.md` file in `~/Library/Application Support/MyWhi/vault/YYYY/MM/`.
 - **Insights** — total words / chars, current streak, longest streak, GitHub-style 26-week heatmap, 30-day trend line, language breakdown.
 - **Drag-and-drop** — drop a `.wav` or `.m4a` file onto the Home tab to transcribe it.
@@ -18,7 +18,7 @@ A native macOS dictation app. Local-only, on-device Whisper inference, Markdown-
 
 ```bash
 cd ~/Documents/MyWhi
-./build.sh          # builds dist/MyWhi.app (uses existing venv for fallback)
+./build.sh          # builds dist/MyWhi.app
 ./install.sh        # copies to /Applications/MyWhi.app
 open /Applications/MyWhi.app
 ```
@@ -36,8 +36,7 @@ First launch:
 ~/Documents/MyWhi/
 ├── Package.swift               # SwiftPM executable, target MyWhi, macOS 14+
 ├── Info.plist                  # Bundle metadata (mic, no Dock by default)
-├── transcribe.py               # faster-whisper wrapper (fallback engine)
-├── build.sh                    # venv + swift build + .app wrap + ad-hoc sign
+├── build.sh                    # swift build + .app wrap + ad-hoc sign
 ├── install.sh                  # cp to /Applications/MyWhi.app
 ├── uninstall.sh                # Remove app + data dir
 ├── Sources/MyWhi/              # Swift source (44 files)
@@ -85,15 +84,14 @@ First launch:
 │   ├── VaultStoreTests.swift
 │   └── VaultIndexTests.swift
 ├── Resources/                  # AppIcon.icns
-├── venv/                       # Python venv (fallback engine only)
-└── dist/MyWhi.app              # Built bundle
+├── build/                       # SwiftPM output (gitignored)
 ```
 
 ## Settings
 
 In **Settings** (sidebar of the desktop app):
 
-- **Engine** — WhisperKit (default) / faster-whisper
+- **Engine** — WhisperKit (only engine)
 - **Model** — tiny / base / small / medium / large-v3-turbo / large-v3
 - **Language** — Russian / English / Auto-detect
 - **Auto copy to clipboard** — ON by default
@@ -139,8 +137,7 @@ If you're upgrading from `Hermes Dictate` v1, the existing `history.json` is mig
 
 - All audio stays on your Mac.
 - WhisperKit inference runs on-device via Core ML / Metal on Apple Silicon.
-- Audio is written to `/tmp/hermes-dictate/recording-<timestamp>.wav` during recording.
-- The Python venv at `~/Documents/MyWhi/venv/` is **only** used as a fallback engine.
+- Audio is written to `/tmp/mywhi/recordings/recording-<timestamp>.wav` during recording.
 - Microphone access is requested once via macOS's standard TCC prompt.
 - Accessibility permission is requested only if you enable auto-paste.
 
