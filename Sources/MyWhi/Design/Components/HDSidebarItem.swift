@@ -1,6 +1,8 @@
 // HDSidebarItem.swift
 // Single row in the desktop sidebar. Used inside NavigationSplitView's
-// sidebar List.
+// sidebar List. Designed to work with native macOS sidebar selection
+// (accent color) while keeping consistent typography and spacing from
+// the Cohere design system.
 //
 // Example:
 //   List(selection: $selection) {
@@ -8,7 +10,6 @@
 //                   section: .home, selection: selection)
 //     HDSidebarItem(icon: "doc.text", label: "Scratchpad",
 //                   section: .scratchpad, selection: selection, badge: "12")
-//     ...
 //   }
 
 import SwiftUI
@@ -29,32 +30,33 @@ struct HDSidebarItem<Section: Hashable>: View {
             Image(systemName: icon)
                 .font(.system(size: 16, weight: .regular))
                 .frame(width: 20, alignment: .center)
+                // Native sidebar selection handles icon color automatically.
+                // When not selected, use muted; when selected, let native highlight apply.
                 .foregroundStyle(isSelected ? HDColor.primary : HDColor.muted)
 
             Text(label)
-                .font(.system(size: 14, weight: isSelected ? .medium : .regular))
+                .font(HDFont.body)
                 .foregroundStyle(isSelected ? HDColor.ink : HDColor.bodyMuted)
 
             Spacer(minLength: 0)
 
             if let badge {
                 Text(badge)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(HDColor.muted)
+                    .font(HDFont.micro)
+                    .foregroundStyle(isSelected ? HDColor.primary : HDColor.muted)
                     .padding(.horizontal, HDSpacing.xs.rawValue + 2)
-                    .padding(.vertical, 2)
+                    .padding(.vertical, 1)
                     .background(
                         Capsule()
-                            .fill(HDColor.softStone)
+                            .fill(isSelected ? HDColor.softStone.opacity(0.5) : HDColor.softStone)
                     )
             }
         }
-        .padding(.vertical, HDSpacing.xs.rawValue + 2)
+        .padding(.vertical, HDSpacing.xs.rawValue)
         .padding(.horizontal, HDSpacing.sm.rawValue)
-        .background(
-            RoundedRectangle(cornerRadius: HDRadius.xs.rawValue, style: .continuous)
-                .fill(isSelected ? HDColor.softStone : Color.clear)
-        )
+        // Don't add custom background — let native sidebar selection
+        // (accent color) handle the highlight. This avoids the conflict
+        // between custom background and native blue selection.
         .contentShape(Rectangle())
         .tag(section)
     }

@@ -68,17 +68,17 @@ struct DesktopRootView: View {
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Header / logo
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: HDSpacing.xs.rawValue) {
                 Text("MyWhi")
                     .font(.system(size: 18, weight: .semibold, design: .default))
                     .foregroundStyle(HDColor.ink)
-                Text("v2.0-alpha")
+                Text("v2.0")
                     .font(HDFont.micro)
                     .foregroundStyle(HDColor.muted)
             }
             .padding(.horizontal, HDSpacing.lg.rawValue)
             .padding(.top, HDSpacing.xl.rawValue)
-            .padding(.bottom, HDSpacing.lg.rawValue)
+            .padding(.bottom, HDSpacing.md.rawValue)
 
             Divider()
                 .padding(.horizontal, HDSpacing.lg.rawValue)
@@ -95,7 +95,7 @@ struct DesktopRootView: View {
                     )
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets(top: 2, leading: 8, bottom: 2, trailing: 8))
+                    .listRowInsets(EdgeInsets(top: HDSpacing.xs.rawValue, leading: HDSpacing.sm.rawValue, bottom: HDSpacing.xs.rawValue, trailing: HDSpacing.sm.rawValue))
                 }
             }
             .listStyle(.sidebar)
@@ -116,7 +116,9 @@ struct DesktopRootView: View {
                         .foregroundStyle(HDColor.muted)
                 }
             }
-            .padding(HDSpacing.lg.rawValue)
+            .padding(.horizontal, HDSpacing.lg.rawValue)
+            .padding(.bottom, HDSpacing.lg.rawValue)
+            .padding(.top, HDSpacing.sm.rawValue)
         }
         .frame(minWidth: 220, idealWidth: 240, maxWidth: 280)
         .background(HDColor.canvas)
