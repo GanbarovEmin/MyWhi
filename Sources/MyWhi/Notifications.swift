@@ -19,8 +19,13 @@ extension Notification.Name {
     /// the AppSceneRouter to .desktop, and invokes openWindow(id: "desktop").
     static let mywhiOpenDesktop = Notification.Name("MyWhi.openDesktop")
 
-    /// Posted by HomeView when the user clicks "Open in Scratchpad" on
-    /// the last transcript. DesktopRootView switches selection to
-    /// .scratchpad and sets a search query (userInfo["query"]).
+    /// Posted by AppDelegate when the user picks "Open MyWhi" from the
+    /// menu bar right-click menu. The DesktopRootView listens, switches
+    /// the AppSceneRouter to .desktop, and invokes openWindow(id: "desktop").
     static let mywhiNavigateToScratchpad = Notification.Name("MyWhi.navigateToScratchpad")
+
+    /// Phase 5.2 — App menu commands.
+    /// Cmd+Option+D from any focus context (no menu bar popover open).
+    static let mywhiToggleRecording = Notification.Name("MyWhi.toggleRecording")
+    static let mywhiDiscardRecording = Notification.Name("MyWhi.discardRecording")
 }

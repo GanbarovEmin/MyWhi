@@ -34,6 +34,29 @@ struct MyWhiApp: App {
         .commands {
             // Hide the default "New" menu item — we don't have documents.
             CommandGroup(replacing: .newItem) {}
+
+            // Phase 5.2 — App-level menu commands that route through
+            // the AppContainer so they work whether the desktop window
+            // is open or the user is in another app and the menu bar
+            // popover is the only MyWhi surface on screen.
+            CommandMenu("Recording") {
+                Button("Start / Stop") {
+                    NotificationCenter.default.post(name: .mywhiToggleRecording, object: nil)
+                }
+                .keyboardShortcut("d", modifiers: [.command, .option])
+
+                Button("Discard Current") {
+                    NotificationCenter.default.post(name: .mywhiDiscardRecording, object: nil)
+                }
+                .keyboardShortcut(.escape, modifiers: [])
+
+                Divider()
+
+                Button("Open MyWhi") {
+                    NotificationCenter.default.post(name: .mywhiOpenDesktop, object: nil)
+                }
+                .keyboardShortcut("o", modifiers: [.command, .shift])
+            }
         }
 
         // --- Design system preview (alpha dev tool) ---

@@ -142,7 +142,7 @@ struct SettingsViewDesktop: View {
         )
     }
 
-    // MARK: - Behavior
+    // MARK: Behavior
 
     private var behaviorSection: some View {
         HDCard(.canvas) {
@@ -153,6 +153,34 @@ struct SettingsViewDesktop: View {
                 Toggle("Сохранять в vault", isOn: saveHistoryBinding)
                 Toggle("Авто-вставка в активное приложение (Cmd+V)", isOn: autoPasteBinding)
                     .help("Phase 6.2: требует Accessibility permission")
+
+                Divider()
+                    .padding(.vertical, HDSpacing.xs.rawValue)
+
+                // Hotkey display + status (Phase 5.3 — UI surface for
+                // the global hotkey. The actual key capture is a
+                // future P5.x; for now we just show the current chord
+                // and a button to re-register the default).
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Глобальный hotkey")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(HDColor.ink)
+                        Text("Работает из любого приложения")
+                            .font(HDFont.caption)
+                            .foregroundStyle(HDColor.muted)
+                    }
+                    Spacer()
+                    Text("⌘⌥D")
+                        .font(HDFont.monoLabel(size: 14, weight: .medium))
+                        .padding(.horizontal, HDSpacing.md.rawValue)
+                        .padding(.vertical, HDSpacing.xs.rawValue)
+                        .background(
+                            RoundedRectangle(cornerRadius: HDRadius.xs.rawValue, style: .continuous)
+                                .fill(HDColor.softStone)
+                        )
+                        .foregroundStyle(HDColor.ink)
+                }
 
                 if appState.settings.autoPaste {
                     HStack(spacing: HDSpacing.sm.rawValue) {

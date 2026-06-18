@@ -24,6 +24,29 @@ final class AppContainer: ObservableObject {
         self.appState.sceneRouter = sceneRouter
 
         self.globalHotKey = GlobalHotKey()
+
+        // App-menu commands (Phase 5.2) — observers are stored so they
+        // don't get deallocated. We forward to the same handlers the
+        // global hotkey and the menu bar popover use.
+        NotificationCenter.default.addObserver(
+            forName: .mywhiToggleRecording,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.appState.toggleRecording()
+            }
+        }
+        NotificationCenter.default.addObserver(
+            forName: .mywhiDiscardRecording,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.appState.discardRecording()
+            }
+        }
+
         // Wire hot key → toggle recording. We re-register with the
         // current default chord; users can change it later.
         NotificationCenter.default.addObserver(

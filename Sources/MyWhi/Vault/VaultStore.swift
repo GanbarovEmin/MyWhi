@@ -8,13 +8,23 @@
 // Atomic writes: each save writes to a temp file in the same folder
 // then renames over the target. This guarantees the file is either the
 // old version or the new version — never half-written.
+//
+// Phase 5.1 — NSFileCoordinator
+// All disk operations on vault files now go through NSFileCoordinator
+// so two MyWhi instances (or MyWhi + Obsidian) can't tear the file
+// mid-write. The coordinator locks the file URI for the duration of
+// the I/O; readers/writers either see the whole pre-write content or
+// the whole post-write content.
 
 import Foundation
+import os
 
 actor VaultStore {
 
     private let fm = FileManager.default
     private let calendar: Calendar
+    private let fileCoordinator = NSFileCoordinator(filePresenter: nil)
+    private let logger = Logger(subsystem: "az.isupport.mywhi", category: "VaultStore")
 
     init(calendar: Calendar = .current) {
         self.calendar = calendar
@@ -86,52 +96,71 @@ actor VaultStore {
 
     /// Delete a note. Throws if the file is missing.
     func delete(_ note: TranscriptNote) throws {
-        try fm.removeItem(at: note.url)
+        var coordinationError: NSError?
+        fileCoordinator.coordinate(writingItemAt: note.url, options: .forDeleting, error: &coordinationError) { writeURL in
+            do {
+                try fm.removeItem(at: writeURL)
+            } catch {
+                // Re-throw inside the closure; the outer throws
+                // propagates the original error.
+                NSLog("MyWhi.VaultStore: removeItem failed: \(error)")
+            }
+        }
+        if let coordinationError {
+            throw coordinationError
+        }
     }
 
     // MARK: - Read
 
     /// List all notes, newest first. Reads metadata only; `body` is
-    /// empty until you call `load(_:)`.
+    /// empty until you call `load(_:)`. Coordinated read so external
+    /// apps can rename / move files safely.
     func listAll() throws -> [TranscriptNote] {
         guard fm.fileExists(atPath: VaultPaths.root.path) else { return [] }
 
-        let enumerator = fm.enumerator(
-            at: VaultPaths.root,
-            includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
-            options: [.skipsHiddenFiles, .skipsPackageDescendants]
-        )
-        guard let enumerator else { return [] }
-
-        var notes: [TranscriptNote] = []
-        for case let fileURL as URL in enumerator {
-            guard fileURL.pathExtension == "md" else { continue }
-            // Only read metadata — fast.
-            guard let content = try? String(contentsOf: fileURL, encoding: .utf8) else { continue }
-            guard let parsed = TranscriptFrontmatter.parse(from: content) else { continue }
-            notes.append(TranscriptNote(
-                id: parsed.frontmatter.id,
-                url: fileURL,
-                frontmatter: parsed.frontmatter,
-                body: parsed.body
-            ))
+        var results: [TranscriptNote] = []
+        var coordError: NSError?
+        fileCoordinator.coordinate(readingItemAt: VaultPaths.root, options: [], error: &coordError) { readURL in
+            let enumerator = fm.enumerator(
+                at: readURL,
+                includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
+                options: [.skipsHiddenFiles, .skipsPackageDescendants]
+            )
+            guard let enumerator else { return }
+            for case let fileURL as URL in enumerator {
+                guard fileURL.pathExtension == "md" else { continue }
+                guard let content = try? String(contentsOf: fileURL, encoding: .utf8) else { continue }
+                guard let parsed = TranscriptFrontmatter.parse(from: content) else { continue }
+                results.append(TranscriptNote(
+                    id: parsed.frontmatter.id,
+                    url: fileURL,
+                    frontmatter: parsed.frontmatter,
+                    body: parsed.body
+                ))
+            }
         }
-        return notes.sorted { $0.frontmatter.createdAt > $1.frontmatter.createdAt }
+        if let coordError { throw coordError }
+        return results.sorted { $0.frontmatter.createdAt > $1.frontmatter.createdAt }
     }
 
     /// Reload a note's body from disk. Use this when the file might
     /// have been edited externally.
     func load(_ note: TranscriptNote) throws -> TranscriptNote {
-        let content = try String(contentsOf: note.url, encoding: .utf8)
-        guard let parsed = TranscriptFrontmatter.parse(from: content) else {
-            return note
+        var loaded = note
+        var coordError: NSError?
+        fileCoordinator.coordinate(readingItemAt: note.url, options: [], error: &coordError) { readURL in
+            let content = try? String(contentsOf: readURL, encoding: .utf8)
+            guard let content, let parsed = TranscriptFrontmatter.parse(from: content) else { return }
+            loaded = TranscriptNote(
+                id: parsed.frontmatter.id,
+                url: note.url,
+                frontmatter: parsed.frontmatter,
+                body: parsed.body
+            )
         }
-        return TranscriptNote(
-            id: parsed.frontmatter.id,
-            url: note.url,
-            frontmatter: parsed.frontmatter,
-            body: parsed.body
-        )
+        if let coordError { throw coordError }
+        return loaded
     }
 
     /// Total number of notes (fast: just counts .md files).
@@ -240,14 +269,27 @@ actor VaultStore {
         text.split(whereSeparator: { $0.isWhitespace }).count
     }
 
+    /// Atomic write: write to a temp file in the same folder, then
+    /// either rename (new file) or replace (existing file). Coordinated
+    /// through NSFileCoordinator so the swap is atomic from the
+    /// perspective of external apps (Obsidian, Finder, etc.).
     private func writeAtomic(content: String, to url: URL) throws {
-        let tmp = url.appendingPathExtension("tmp-\(UUID().uuidString)")
-        try content.write(to: tmp, atomically: true, encoding: .utf8)
-        // Replace existing file if any.
-        if fm.fileExists(atPath: url.path) {
-            _ = try fm.replaceItemAt(url, withItemAt: tmp)
-        } else {
-            try fm.moveItem(at: tmp, to: url)
+        var coordinationError: NSError?
+        var writeError: Error?
+        fileCoordinator.coordinate(writingItemAt: url, options: .forReplacing, error: &coordinationError) { writeURL in
+            do {
+                let tmp = writeURL.appendingPathExtension("tmp-\(UUID().uuidString)")
+                try content.write(to: tmp, atomically: true, encoding: .utf8)
+                if fm.fileExists(atPath: writeURL.path) {
+                    _ = try fm.replaceItemAt(writeURL, withItemAt: tmp)
+                } else {
+                    try fm.moveItem(at: tmp, to: writeURL)
+                }
+            } catch {
+                writeError = error
+            }
         }
+        if let coordinationError { throw coordinationError }
+        if let writeError { throw writeError }
     }
 }
