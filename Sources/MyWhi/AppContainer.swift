@@ -24,6 +24,17 @@ final class AppContainer: ObservableObject {
         self.appState.sceneRouter = sceneRouter
 
         self.globalHotKey = GlobalHotKey()
+        // Apply user's saved hotkey to the manager before first register.
+        globalHotKey.applySettings(appState.settings.hotkeyModifiers,
+                                   appState.settings.hotkeyKeyCode)
+
+        // Phase 6.1: warm up the audio engine for pre-roll. prepare()
+        // is async and idempotent — it triggers the mic permission
+        // prompt on first call, which is fine because the user
+        // expects it when they first try to record.
+        Task { @MainActor [weak self] in
+            await self?.appState.recorder.prepare()
+        }
 
         // App-menu commands (Phase 5.2) — observers are stored so they
         // don't get deallocated. We forward to the same handlers the
@@ -61,6 +72,24 @@ final class AppContainer: ObservableObject {
         globalHotKey.register { [weak self] in
             Task { @MainActor [weak self] in
                 self?.appState.toggleRecording()
+            }
+        }
+
+        // Observe hotkey settings changes and re-register the hotkey
+        // with the new chord. Combines the existing settings.publisher
+        // chain in AppState — we add ours on top.
+        NotificationCenter.default.addObserver(
+            forName: .mywhiHotkeyChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            guard let self,
+                  let info = note.userInfo,
+                  let mods = info["modifiers"] as? UInt32,
+                  let key = info["keyCode"] as? UInt32
+            else { return }
+            Task { @MainActor [weak self] in
+                self?.globalHotKey.reregister(modifiers: mods, keyCode: key)
             }
         }
     }

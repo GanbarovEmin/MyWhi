@@ -3,7 +3,8 @@
 // language, behavior toggles, storage info, and Obsidian integration.
 
 import SwiftUI
-
+import AppKit
+import Carbon.HIToolbox
 struct SettingsViewDesktop: View {
 
     @EnvironmentObject private var appState: AppState
@@ -11,6 +12,7 @@ struct SettingsViewDesktop: View {
 
     @State private var vaultSize: Int64 = 0
     @State private var obsidianStatus: ObsidianStatus = .unknown
+    @State private var showingHotkeySheet: Bool = false
 
     enum ObsidianStatus {
         case unknown
@@ -157,10 +159,10 @@ struct SettingsViewDesktop: View {
                 Divider()
                     .padding(.vertical, HDSpacing.xs.rawValue)
 
-                // Hotkey display + status (Phase 5.3 — UI surface for
-                // the global hotkey. The actual key capture is a
-                // future P5.x; for now we just show the current chord
-                // and a button to re-register the default).
+                // Hotkey display + change button (Phase 6.3 — runtime
+                // customization of the global hotkey. The chord
+                // itself is stored in AppSettings and survives
+                // restarts.)
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Глобальный hotkey")
@@ -171,7 +173,7 @@ struct SettingsViewDesktop: View {
                             .foregroundStyle(HDColor.muted)
                     }
                     Spacer()
-                    Text("⌘⌥D")
+                    Text(hotkeyDisplay)
                         .font(HDFont.monoLabel(size: 14, weight: .medium))
                         .padding(.horizontal, HDSpacing.md.rawValue)
                         .padding(.vertical, HDSpacing.xs.rawValue)
@@ -180,6 +182,26 @@ struct SettingsViewDesktop: View {
                                 .fill(HDColor.softStone)
                         )
                         .foregroundStyle(HDColor.ink)
+                    Button("Изменить…") {
+                        showingHotkeySheet = true
+                    }
+                    .buttonStyle(.borderless)
+                }
+                .sheet(isPresented: $showingHotkeySheet) {
+                    HotkeyCaptureSheet(
+                        initialModifiers: appState.settings.hotkeyModifiers,
+                        initialKeyCode: appState.settings.hotkeyKeyCode,
+                        onSave: { mods, key in
+                            appState.settings.hotkeyModifiers = mods
+                            appState.settings.hotkeyKeyCode = key
+                            NotificationCenter.default.post(
+                                name: .mywhiHotkeyChanged,
+                                object: nil,
+                                userInfo: ["modifiers": mods, "keyCode": key]
+                            )
+                        },
+                        onCancel: {}
+                    )
                 }
 
                 if appState.settings.autoPaste {
@@ -214,6 +236,44 @@ struct SettingsViewDesktop: View {
 
     private var darkModeBinding: Binding<Bool> {
         Binding(get: { appState.settings.useDarkMode }, set: { appState.settings.useDarkMode = $0 })
+    }
+
+    private var hotkeyDisplay: String {
+        let mods = appState.settings.hotkeyModifiers
+        var parts: [String] = []
+        if mods & UInt32(controlKey) != 0 { parts.append("⌃") }
+        if mods & UInt32(optionKey)  != 0 { parts.append("⌥") }
+        if mods & UInt32(shiftKey)   != 0 { parts.append("⇧") }
+        if mods & UInt32(cmdKey)     != 0 { parts.append("⌘") }
+        let modStr = parts.joined()
+
+        let key = keyCodeToDisplay(appState.settings.hotkeyKeyCode)
+        return modStr.isEmpty ? key : "\(modStr)\(key)"
+    }
+
+    private func keyCodeToDisplay(_ code: UInt32) -> String {
+        switch code {
+        case 0x00: return "A"
+        case 0x01: return "S"
+        case 0x02: return "D"
+        case 0x03: return "F"
+        case 0x04: return "H"
+        case 0x05: return "G"
+        case 0x06: return "Z"
+        case 0x07: return "X"
+        case 0x08: return "C"
+        case 0x09: return "V"
+        case 0x0B: return "B"
+        case 0x0C: return "Q"
+        case 0x0D: return "W"
+        case 0x0E: return "E"
+        case 0x0F: return "R"
+        case 0x10: return "Y"
+        case 0x11: return "T"
+        case 0x1D...0x2A: return String(["0","1","2","3","4","5","6","7","8","9"][Int(code) - 0x1D])
+        case 0x2C: return "Space"
+        default:  return String(format: "0x%02X", code)
+        }
     }
 
     private var autoCopyBinding: Binding<Bool> {

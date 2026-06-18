@@ -28,4 +28,9 @@ extension Notification.Name {
     /// Cmd+Option+D from any focus context (no menu bar popover open).
     static let mywhiToggleRecording = Notification.Name("MyWhi.toggleRecording")
     static let mywhiDiscardRecording = Notification.Name("MyWhi.discardRecording")
+
+    /// Phase 6.3 — Posted by Settings when the user saves a new
+    /// hotkey chord. AppContainer re-registers GlobalHotKey with
+    /// the new values. userInfo: ["modifiers": UInt32, "keyCode": UInt32]
+    static let mywhiHotkeyChanged = Notification.Name("MyWhi.hotkeyChanged")
 }

@@ -7,8 +7,11 @@
 // requirements gate Carbon behind Accessibility permission. For a
 // menu-bar dictation app this is the right tradeoff.
 //
-// Toggle handler dispatches to AppState.toggleRecording on the main
-// actor; we route via a closure registered at app launch.
+// Phase 6.3 — runtime configuration
+// The hotkey's modifier flags and key code are now stored in
+// AppSettings. We register on init, but the user can change the
+// chord in Settings. AppContainer calls `reregister(modifiers:
+// keyCode:)` after the user saves a new chord.
 
 import Foundation
 import Carbon.HIToolbox
@@ -25,17 +28,41 @@ final class GlobalHotKey {
     /// The hot key ID — arbitrary, but must be unique within the app.
     private static let hotKeyID: UInt32 = 0x4D57_684B  // "MWhK"
 
-    /// Default chord: Cmd+Option+D. Stored as Carbon modifier flags.
+    /// Current registered modifier flags.
+    private(set) var currentModifiers: UInt32 = UInt32(cmdKey | optionKey)
+
+    /// Current registered virtual key code.
+    private(set) var currentKeyCode: UInt32 = 0x02   // kVK_ANSI_D
+
     /// nonisolated so it can be used as a default parameter value.
     nonisolated static let defaultModifiers: UInt32 = UInt32(cmdKey | optionKey)
+    nonisolated static let defaultKeyCode: UInt32 = 0x02
 
-    /// Register the global hotkey. Idempotent — unregisters any prior
-    /// registration first. The `onPress` closure is called on the main
-    /// thread when the user presses the chord.
-    func register(modifiers: UInt32 = GlobalHotKey.defaultModifiers, keyCode: UInt32 = UInt32(kVK_ANSI_D), onPress: @escaping () -> Void) {
+    /// Apply the user's saved settings before the first register() call.
+    /// Used at app launch to seed the manager with the persisted chord.
+    func applySettings(_ modifiers: UInt32, _ keyCode: UInt32) {
+        currentModifiers = modifiers
+        currentKeyCode = keyCode
+    }
+
+    /// Register the global hotkey with default values. Idempotent.
+    func register(onPress: @escaping () -> Void) {
+        register(
+            modifiers: currentModifiers,
+            keyCode: currentKeyCode,
+            onPress: onPress
+        )
+    }
+
+    /// Register the global hotkey with explicit values, or re-register
+    /// with new values if already registered. Unregisters any prior
+    /// registration first.
+    func register(modifiers: UInt32, keyCode: UInt32, onPress: @escaping () -> Void) {
         unregister()
 
         self.onPress = onPress
+        self.currentModifiers = modifiers
+        self.currentKeyCode = keyCode
 
         // Install the Carbon event handler (only once).
         let handler: EventHandlerUPP = { _, eventRef, _ in
@@ -88,11 +115,21 @@ final class GlobalHotKey {
         )
 
         if regStatus != noErr {
-            NSLog("MyWhi.GlobalHotKey: RegisterEventHotKey failed (\(regStatus))")
+            NSLog("MyWhi.GlobalHotKey: RegisterEventHotKey failed (\(regStatus)) for mods=\(modifiers) key=\(keyCode)")
             hotKeyRef = nil
             return
         }
-        NSLog("MyWhi.GlobalHotKey: registered Cmd+Option+D")
+        NSLog("MyWhi.GlobalHotKey: registered mods=\(modifiers) key=\(keyCode)")
+    }
+
+    /// Re-register with new values. Used by Settings when the user
+    /// customizes the hotkey.
+    func reregister(modifiers: UInt32, keyCode: UInt32) {
+        guard let existingOnPress = onPress else {
+            NSLog("MyWhi.GlobalHotKey: reregister() called before register(); ignored")
+            return
+        }
+        register(modifiers: modifiers, keyCode: keyCode, onPress: existingOnPress)
     }
 
     func unregister() {

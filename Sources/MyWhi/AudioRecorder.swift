@@ -1,18 +1,37 @@
 // AudioRecorder.swift
-// Thin wrapper around AVAudioRecorder. Produces 16 kHz mono PCM WAV
-// (the format faster-whisper expects). All recorder interaction is on
-// the main actor; AVFoundation's audio thread handles the actual IO.
+// AVAudioEngine-based recorder with a built-in 0.5s pre-roll buffer.
 //
-// STORAGE
-// Recordings land in /tmp/mywhi/recordings/. Old files (>7 days) are
-// reaped on every start() to keep the directory bounded. The folder
-// was renamed from "hermes-dictate" in the v2.0.0-alpha audit.
+// Why AVAudioEngine instead of AVAudioRecorder:
+//   - We need real-time access to the audio samples (for the pre-roll
+//     ring buffer and for a real level meter). AVAudioRecorder hides
+//     everything behind the file system.
+//   - We want to keep the engine running BEFORE the user starts a
+//     recording so the pre-roll can capture the most recent half-second
+//     of audio. AVAudioRecorder has no "always listening" mode.
 //
-// LIVE LEVEL
-// During recording we expose `currentLevel` (0...1, RMS amplitude) for
-// the live waveform UI (HDWaveformView). Powered by
-// `recorder.updateMeters()` + `averagePower(forChannel:)` polled on a
-// 30ms timer. Cheap — no audio buffer copies.
+// THREADING MODEL
+//   - The audio tap fires on a low-priority audio thread.
+//   - preRollSamples and isRecording are protected by NSLock — accessed
+//     from the audio thread and from the main actor.
+//   - The audio file write goes through a serial dispatch queue so the
+//     file is written in input order regardless of how many taps overlap.
+//   - @Published currentLevel is updated via Task { @MainActor } from
+//     the audio thread (one ~85ms hop at 48kHz/4096 buffer).
+//
+// PRE-ROLL
+//   - 0.5s ring buffer of the most recent audio at the input rate
+//     (typically 48kHz, 24000 samples). Lock-protected array.
+//   - When start() is called, we (a) open the output file, (b) flush
+//     the pre-roll into the file via the same write path, (c) set
+//     isRecording=true so subsequent taps write to the file. Total
+//     delay between key press and first bytes on disk: ~5-15ms (one
+//     AVAudioFile.write + the next tap callback).
+//
+// FILE FORMAT
+//   - 16kHz, mono, 16-bit signed PCM, WAV container — what WhisperKit
+//     and faster-whisper both expect.
+//   - Resampled from the input rate via AVAudioConverter (Float32 →
+//     Float32 at 16kHz, then AVAudioFile writes the Int16 bytes).
 
 import Foundation
 import AVFoundation
@@ -21,21 +40,55 @@ import Combine
 @MainActor
 final class AudioRecorder: NSObject, ObservableObject {
 
-    private var recorder: AVAudioRecorder?
+    // MARK: - Engine
+
+    private nonisolated let engine = AVAudioEngine()
+    nonisolated(unsafe) private var isEngineStarted = false
+
+    // MARK: - Pre-roll ring buffer (lock-protected)
+
+    nonisolated(unsafe) private var preRollSamples: [Float] = []
+    private nonisolated let preRollLock = NSLock()
+    nonisolated let preRollSeconds: TimeInterval = 0.5
+    nonisolated(unsafe) private var preRollCapacity: Int = 0
+
+    // MARK: - Recording state
+
+    /// Lock around `isRecording` because it's read by the audio tap
+    /// (background thread) and written by start/stop (main actor).
+    private nonisolated let recordingLock = NSLock()
+    nonisolated(unsafe) private var isRecordingFlag: Bool = false
+
+    nonisolated(unsafe) private var audioFile: AVAudioFile?
+    nonisolated(unsafe) private var converter: AVAudioConverter?
+    nonisolated(unsafe) private var inputFormat: AVAudioFormat?
+    nonisolated(unsafe) private var recordStartedAt: Date?
+    nonisolated(unsafe) private var inputSampleRate: Double = 48000
+
+    /// Serial queue for file I/O. Audio tap pushes raw samples here;
+    /// we serialize the resample + write.
+    nonisolated let fileQueue = DispatchQueue(
+        label: "az.isupport.mywhi.audiofile",
+        qos: .userInitiated
+    )
+
+    // MARK: - Published
+
+    @Published private(set) var currentLevel: Float = 0
     private(set) var lastRecordingURL: URL?
     private(set) var lastRecordingDuration: TimeInterval = 0
-    private var recordStartedAt: Date?
 
-    /// Live audio level (0...1). Driven by a Combine timer while
-    /// recording. UI can observe this to render a waveform.
-    @Published private(set) var currentLevel: Float = 0
+    /// Cached RMS — the audio thread writes this every buffer (~85ms
+    /// at 48kHz/4096). The SwiftUI waveform redraws on each tick.
+    private nonisolated let levelLock = NSLock()
+    nonisolated(unsafe) private var latestRms: Float = 0
 
-    /// Timer that polls averagePower while recording.
-    private var levelTimer: Timer?
+    nonisolated(unsafe) private var levelTimer: Timer?
+
+    // MARK: - Storage
 
     /// Recordings directory. Exposed internally for legacy-folder
     /// migration in AppState. Created lazily on first start().
-    /// Renamed from "hermes-dictate" → "mywhi" in audit Phase 1.5.
     internal static var recordingsDir: URL {
         let url = URL(fileURLWithPath: "/tmp/mywhi", isDirectory: true)
             .appendingPathComponent("recordings", isDirectory: true)
@@ -43,25 +96,11 @@ final class AudioRecorder: NSObject, ObservableObject {
         return url
     }
 
-    /// Format chosen to match faster-whisper's preferred input:
-    /// 16 kHz, mono, 16-bit signed little-endian PCM in a WAV container.
-    private static let wavSettings: [String: Any] = [
-        AVFormatIDKey:            Int(kAudioFormatLinearPCM),
-        AVSampleRateKey:          16_000.0,
-        AVNumberOfChannelsKey:    1,
-        AVLinearPCMBitDepthKey:   16,
-        AVLinearPCMIsBigEndianKey: false,
-        AVLinearPCMIsFloatKey:    false,
-        AVLinearPCMIsNonInterleaved: false,
-    ]
-
-    /// Files older than this are reaped on each start() (audit #6).
+    /// Files older than this are reaped on each start().
     private static let maxAge: TimeInterval = 7 * 24 * 60 * 60
 
     // MARK: - Permission
 
-    /// Returns true if we already have mic access, or prompts the user
-    /// and returns their choice. macOS shows the standard TCC dialog.
     func requestPermissionIfNeeded() async -> Bool {
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
         case .authorized:
@@ -75,88 +114,280 @@ final class AudioRecorder: NSObject, ObservableObject {
         }
     }
 
+    // MARK: - Lifecycle
+
+    /// Start the engine and pre-roll capture. Idempotent — safe to
+    /// call multiple times. Called by AppContainer on first scene
+    /// activation, and by `start()` if the engine isn't up yet.
+    ///
+    /// This will trigger macOS's microphone permission prompt on the
+    /// first call. That's intentional — we want the engine warm so
+    /// the first Cmd+Option+D press has zero mic latency.
+    func prepare() async {
+        guard !isEngineStarted else { return }
+
+        let granted = await requestPermissionIfNeeded()
+        guard granted else {
+            NSLog("MyWhi.AudioRecorder: prepare() — no mic permission; engine not started")
+            return
+        }
+
+        // On macOS, audio routing is handled by the HAL — no need
+        // for AVAudioSession (iOS-only). The engine just works once
+        // the input node is enabled and permission is granted.
+        let format = engine.inputNode.outputFormat(forBus: 0)
+        inputFormat = format
+        inputSampleRate = format.sampleRate
+        preRollCapacity = Int(preRollSeconds * format.sampleRate)
+
+        // The tap captures audio at the input node's native format
+        // (typically 48kHz Float32 mono on Mac). The closure runs on
+        // an audio render thread, not the main actor.
+        engine.inputNode.installTap(onBus: 0, bufferSize: 4096, format: format) { [weak self] buffer, _ in
+            self?.handleInputBuffer(buffer)
+        }
+
+        engine.prepare()
+        do {
+            try engine.start()
+            isEngineStarted = true
+            NSLog("MyWhi.AudioRecorder: engine started (input=\(format.sampleRate)Hz, channels=\(format.channelCount))")
+            startLevelTimer()
+        } catch {
+            NSLog("MyWhi.AudioRecorder: engine.start() failed: \(error)")
+        }
+    }
+
+    /// Stop the engine completely. Used in tests; not called in
+    /// production — we want the engine always running so pre-roll
+    /// keeps capturing.
+    func shutdown() {
+        guard isEngineStarted else { return }
+        engine.inputNode.removeTap(onBus: 0)
+        engine.stop()
+        isEngineStarted = false
+        stopLevelTimer()
+    }
+
     // MARK: - Record
 
     func start() throws {
-        // Stop any in-flight recording first; should not happen in MVP
-        // (we gate the menu on status) but be defensive.
-        recorder?.stop()
-        stopLevelTimer()
-
         // Reap old files so /tmp doesn't grow unbounded.
         reapOldRecordings()
 
+        // Engine might not be running yet (cold start before prepare()
+        // completed). Start it; the user expects no latency on first
+        // press.
+        if !isEngineStarted {
+            Task { await self.prepare() }
+        }
+
+        // Open output file (16kHz mono Int16 PCM WAV).
         let filename = "recording-\(Int(Date().timeIntervalSince1970)).wav"
         let url = Self.recordingsDir.appendingPathComponent(filename)
 
-        let rec = try AVAudioRecorder(url: url, settings: Self.wavSettings)
-        rec.delegate = self
-        rec.isMeteringEnabled = true   // ← needed for averagePower
-        rec.prepareToRecord()
-        guard rec.record() else {
-            throw NSError(
-                domain: "MyWhi.AudioRecorder",
-                code: -1,
-                userInfo: [NSLocalizedDescriptionKey: "AVAudioRecorder.record() returned false"]
-            )
+        let settings: [String: Any] = [
+            AVFormatIDKey:            Int(kAudioFormatLinearPCM),
+            AVSampleRateKey:          16_000.0,
+            AVNumberOfChannelsKey:    1,
+            AVLinearPCMBitDepthKey:   16,
+            AVLinearPCMIsBigEndianKey: false,
+            AVLinearPCMIsFloatKey:    false,
+            AVLinearPCMIsNonInterleaved: false,
+        ]
+
+        // Snapshot the pre-roll while holding the lock.
+        let preRoll: [Float] = preRollLock.withLock { preRollSamples }
+        let inputRate = inputSampleRate
+
+        // Open the file + write pre-roll synchronously, all on fileQueue.
+        fileQueue.sync {
+            do {
+                self.audioFile = try AVAudioFile(
+                    forWriting: url,
+                    settings: settings,
+                    commonFormat: .pcmFormatFloat32,
+                    interleaved: false
+                )
+                if let inputFormat = self.inputFormat {
+                    let outFormat = AVAudioFormat(
+                        commonFormat: .pcmFormatFloat32,
+                        sampleRate: 16_000,
+                        channels: 1,
+                        interleaved: false
+                    )!
+                    self.converter = AVAudioConverter(from: inputFormat, to: outFormat)
+                }
+                if !preRoll.isEmpty {
+                    self.writeSamplesToFileOnQueue(samples: preRoll, sampleRate: inputRate)
+                }
+            } catch {
+                NSLog("MyWhi.AudioRecorder: AVAudioFile open failed: \(error)")
+            }
         }
-        recorder = rec
+
+        // Mark recording active. The next tap callback will start
+        // pushing samples into the file.
+        recordingLock.withLock { isRecordingFlag = true }
         recordStartedAt = Date()
         currentLevel = 0
-        startLevelTimer()
     }
 
     @discardableResult
     func stop() throws -> URL {
-        guard let rec = recorder else {
-            throw NSError(
-                domain: "MyWhi.AudioRecorder",
-                code: -2,
-                userInfo: [NSLocalizedDescriptionKey: "Recorder is not running"]
-            )
+        // Clear the recording flag first so the tap stops writing
+        // before we close the file.
+        recordingLock.withLock { isRecordingFlag = false }
+
+        // Close the file on the file queue.
+        fileQueue.sync {
+            self.audioFile = nil
+            self.converter = nil
         }
-        rec.stop()
-        let url = rec.url
-        // Use AVAudioRecorder.currentTime for sub-second precision; falls
-        // back to wall-clock delta if recorder returns 0 (e.g. paused).
-        let dur = rec.currentTime
-        lastRecordingDuration = dur > 0 ? dur : Date().timeIntervalSince(recordStartedAt ?? Date())
-        recorder = nil
-        recordStartedAt = nil
+
+        // Find the last file we wrote. We don't track the URL on
+        // audioFile directly (it lives on the file queue), so we
+        // derive it from the timestamp.
+        let url = mostRecentRecordingURL()
+        let dur: TimeInterval
+        if let started = recordStartedAt {
+            dur = Date().timeIntervalSince(started)
+        } else {
+            dur = 0
+        }
+        lastRecordingDuration = dur
         lastRecordingURL = url
-        stopLevelTimer()
+        recordStartedAt = nil
         currentLevel = 0
-        return url
+        return url ?? lastRecordingURL ?? URL(fileURLWithPath: "/tmp/mywhi/recordings/")
     }
 
-    /// Cancel an in-flight recording and delete the .wav file. Used
-    /// when the user discards a recording (Esc key, or "Discard" from
-    /// the menu bar).
+    /// Cancel an in-flight recording and delete the .wav file.
     func cancel() {
-        guard let rec = recorder else { return }
-        rec.stop()
-        let url = rec.url
-        recorder = nil
+        recordingLock.withLock { isRecordingFlag = false }
+        fileQueue.sync {
+            self.audioFile = nil
+            self.converter = nil
+        }
+        if let url = mostRecentRecordingURL() {
+            try? FileManager.default.removeItem(at: url)
+            NSLog("MyWhi.AudioRecorder: cancelled and removed \(url.lastPathComponent)")
+        }
         recordStartedAt = nil
         lastRecordingURL = nil
         lastRecordingDuration = 0
-        stopLevelTimer()
         currentLevel = 0
-        try? FileManager.default.removeItem(at: url)
-        NSLog("MyWhi.AudioRecorder: cancelled and removed \(url.lastPathComponent)")
+    }
+
+    // MARK: - Audio tap
+
+    /// Runs on a low-priority audio render thread (NOT main actor).
+    /// Holds the tap as short as possible: compute RMS, copy samples
+    /// out of the buffer, hand them to the file queue if recording.
+    private nonisolated func handleInputBuffer(_ buffer: AVAudioPCMBuffer) {
+        guard let channelData = buffer.floatChannelData?[0] else { return }
+        let frameCount = Int(buffer.frameLength)
+        let sampleRate = buffer.format.sampleRate
+
+        // RMS for the level meter.
+        var sum: Float = 0
+        for i in 0..<frameCount {
+            let s = channelData[i]
+            sum += s * s
+        }
+        let rms = sqrt(sum / Float(max(1, frameCount)))
+        let normalized = max(0, min(1, (rms + 0.05) * 4))
+        levelLock.withLock { latestRms = normalized }
+
+        // Always feed the pre-roll ring buffer.
+        let newSamples = Array(UnsafeBufferPointer(start: channelData, count: frameCount))
+        preRollLock.withLock {
+            preRollSamples.append(contentsOf: newSamples)
+            if preRollSamples.count > preRollCapacity {
+                preRollSamples.removeFirst(preRollSamples.count - preRollCapacity)
+            }
+        }
+
+        // If recording, hand off to the file queue.
+        let isRec = recordingLock.withLock { isRecordingFlag }
+        if isRec {
+            fileQueue.async { [weak self] in
+                self?.writeSamplesToFileOnQueue(samples: newSamples, sampleRate: sampleRate)
+            }
+        }
+    }
+
+    /// Resample and write a chunk of input samples to the open file.
+    /// Must be called on `fileQueue`.
+    private nonisolated func writeSamplesToFileOnQueue(samples: [Float], sampleRate: Double) {
+        guard let file = audioFile, let converter = converter else { return }
+
+        // Build an AVAudioPCMBuffer at the input rate.
+        let inFormat = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: sampleRate,
+            channels: 1,
+            interleaved: false
+        )!
+        guard let inBuffer = AVAudioPCMBuffer(
+            pcmFormat: inFormat,
+            frameCapacity: AVAudioFrameCount(samples.count)
+        ) else { return }
+        let inData = inBuffer.floatChannelData![0]
+        for (i, s) in samples.enumerated() {
+            inData[i] = s
+        }
+        inBuffer.frameLength = AVAudioFrameCount(samples.count)
+
+        // Output buffer at 16kHz, sized to hold the resampled data.
+        let outFormat = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: 16_000,
+            channels: 1,
+            interleaved: false
+        )!
+        let expectedOutFrames = AVAudioFrameCount(Double(samples.count) * 16_000.0 / sampleRate + 1024)
+        guard let outBuffer = AVAudioPCMBuffer(
+            pcmFormat: outFormat,
+            frameCapacity: expectedOutFrames
+        ) else { return }
+
+        var error: NSError?
+        var consumed = false
+        let status = converter.convert(to: outBuffer, error: &error) { _, outStatus in
+            if consumed {
+                outStatus.pointee = .endOfStream
+                return nil
+            }
+            consumed = true
+            outStatus.pointee = .haveData
+            return inBuffer
+        }
+        if status == .error || error != nil {
+            NSLog("MyWhi.AudioRecorder: converter error: \(String(describing: error))")
+            return
+        }
+
+        do {
+            try file.write(from: outBuffer)
+        } catch {
+            NSLog("MyWhi.AudioRecorder: file.write failed: \(error)")
+        }
     }
 
     // MARK: - Live level (waveform)
 
-    /// Polls `recorder.averagePower(forChannel: 0)` and republishes
-    /// `currentLevel` as a 0...1 linear value. dB range is -160...0;
-    /// we map -60...0 to 0...1 with a soft floor (so silent parts
-    /// don't spike to 0 and create a jittery waveform).
     private func startLevelTimer() {
         levelTimer?.invalidate()
         let timer = Timer(timeInterval: 0.033, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.sampleLevel()
+                guard let self else { return }
+                let raw = self.levelLock.withLock { self.latestRms }
+                // Map [0, 1] raw RMS to the display curve used by
+                // HDWaveformView: keep the floor at 0.05 so the
+                // wave is visibly alive even during quiet speech.
+                let curved = pow(Double(raw), 0.7)
+                self.currentLevel = Float(curved)
             }
         }
         RunLoop.main.add(timer, forMode: .common)
@@ -168,23 +399,8 @@ final class AudioRecorder: NSObject, ObservableObject {
         levelTimer = nil
     }
 
-    private func sampleLevel() {
-        guard let rec = recorder else { return }
-        rec.updateMeters()
-        let db = rec.averagePower(forChannel: 0)
-        // Map -60 dB → 0, 0 dB → 1, with a soft floor.
-        let clamped = max(-60, min(0, db))
-        let normalized = (clamped + 60) / 60
-        // Apply a slight exp curve so quiet sounds are still visible.
-        let curved = pow(normalized, 0.7)
-        currentLevel = Float(curved)
-    }
-
     // MARK: - Cleanup
 
-    /// Remove recordings older than `maxAge`. Called on each start() to
-    /// bound disk usage. Cheap because the directory only ever holds a
-    /// few recent .wav files (a few hundred KB to a few MB each).
     private func reapOldRecordings() {
         let dir = Self.recordingsDir
         let fm = FileManager.default
@@ -204,15 +420,29 @@ final class AudioRecorder: NSObject, ObservableObject {
             }
         }
     }
+
+    // MARK: - Helpers
+
+    /// Look up the .wav file we just wrote. The audio file is created
+    /// on the file queue; rather than plumbing the URL back, we infer
+    /// it from the start timestamp (the filename is `recording-<ts>.wav`).
+    private func mostRecentRecordingURL() -> URL? {
+        guard let started = recordStartedAt else { return lastRecordingURL }
+        let ts = Int(started.timeIntervalSince1970)
+        let candidate = Self.recordingsDir.appendingPathComponent("recording-\(ts).wav")
+        return FileManager.default.fileExists(atPath: candidate.path) ? candidate : lastRecordingURL
+    }
 }
 
-// MARK: - AVAudioRecorderDelegate
+// MARK: - NSLock.withLock
 
-extension AudioRecorder: AVAudioRecorderDelegate {
-    nonisolated func audioRecorderDidFinishRecording(_ recorder: AVAudioRecorder, successfully flag: Bool) {
-        // We drive stop() explicitly; this is informational.
-        if !flag {
-            NSLog("MyWhi: AVAudioRecorder finished unsuccessfully")
-        }
+private extension NSLock {
+    /// Swift-friendly withLock helper. Lets the lock be released
+    /// even if the closure throws (Swift's @rethrows doesn't work
+    /// here because NSLock isn't @rethrows).
+    func withLock<T>(_ body: () throws -> T) rethrows -> T {
+        lock()
+        defer { unlock() }
+        return try body()
     }
 }

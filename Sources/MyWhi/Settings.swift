@@ -4,6 +4,7 @@
 
 import Foundation
 import Combine
+import Carbon.HIToolbox
 
 final class AppSettings: ObservableObject, Codable {
 
@@ -19,6 +20,13 @@ final class AppSettings: ObservableObject, Codable {
     @Published var saveHistory: Bool               // save to vault on finish
     @Published var autoPaste: Bool                 // simulate Cmd+V into active app (opt-in, Phase 6.2)
     @Published var useDarkMode: Bool               // override system color scheme (Phase 3.5)
+
+    // MARK: Hotkey (Phase 6.3)
+
+    /// Carbon modifier flags. Default Cmd+Option (= 0x1500 = cmdKey | optionKey).
+    @Published var hotkeyModifiers: UInt32
+    /// macOS virtual key code. Default 0x02 = D key.
+    @Published var hotkeyKeyCode: UInt32
 
     // MARK: Paths
 
@@ -62,7 +70,9 @@ final class AppSettings: ObservableObject, Codable {
         saveHistory: Bool = true,
         autoPaste: Bool = false,
         pythonPath: String = AppSettings.defaultPythonPath,
-        useDarkMode: Bool = false
+        useDarkMode: Bool = false,
+        hotkeyModifiers: UInt32 = UInt32(cmdKey | optionKey),
+        hotkeyKeyCode: UInt32 = 0x02   // kVK_ANSI_D
     ) {
         // Validate inputs against known values; fall back to defaults so
         // a hand-edited settings file cannot crash the app.
@@ -80,6 +90,8 @@ final class AppSettings: ObservableObject, Codable {
         self.autoPaste = autoPaste
         self.pythonPath = pythonPath.isEmpty ? AppSettings.defaultPythonPath : pythonPath
         self.useDarkMode = useDarkMode
+        self.hotkeyModifiers = hotkeyModifiers
+        self.hotkeyKeyCode = hotkeyKeyCode
     }
 
     // MARK: - Persistence
@@ -121,7 +133,8 @@ final class AppSettings: ObservableObject, Codable {
     // MARK: - Codable
 
     enum CodingKeys: String, CodingKey {
-        case engine, modelSize, language, autoCopy, saveHistory, autoPaste, pythonPath, useDarkMode
+        case engine, modelSize, language, autoCopy, saveHistory, autoPaste, pythonPath, useDarkMode,
+             hotkeyModifiers, hotkeyKeyCode
     }
 
     convenience init(from decoder: Decoder) throws {
@@ -135,7 +148,11 @@ final class AppSettings: ObservableObject, Codable {
             autoPaste: try c.decodeIfPresent(Bool.self, forKey: .autoPaste) ?? false,
             pythonPath: try c.decodeIfPresent(String.self, forKey: .pythonPath)
                 ?? AppSettings.defaultPythonPath,
-            useDarkMode: try c.decodeIfPresent(Bool.self, forKey: .useDarkMode) ?? false
+            useDarkMode: try c.decodeIfPresent(Bool.self, forKey: .useDarkMode) ?? false,
+            hotkeyModifiers: try c.decodeIfPresent(UInt32.self, forKey: .hotkeyModifiers)
+                ?? UInt32(cmdKey | optionKey),
+            hotkeyKeyCode: try c.decodeIfPresent(UInt32.self, forKey: .hotkeyKeyCode)
+                ?? 0x02   // kVK_ANSI_D
         )
     }
 
@@ -149,5 +166,7 @@ final class AppSettings: ObservableObject, Codable {
         try c.encode(autoPaste, forKey: .autoPaste)
         try c.encode(pythonPath, forKey: .pythonPath)
         try c.encode(useDarkMode, forKey: .useDarkMode)
+        try c.encode(hotkeyModifiers, forKey: .hotkeyModifiers)
+        try c.encode(hotkeyKeyCode, forKey: .hotkeyKeyCode)
     }
 }
