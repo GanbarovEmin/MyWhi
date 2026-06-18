@@ -17,6 +17,8 @@ struct HomeView: View {
                 VStack(spacing: HDSpacing.xxl.rawValue) {
                     header
 
+                    todayBar   // audit #24
+
                     recordControl
 
                     if !appState.lastTranscript.isEmpty {
@@ -36,6 +38,54 @@ struct HomeView: View {
                 handleDrop(providers: providers)
             }
         }
+    }
+
+    /// Sticky "сегодня" status bar — shows today's word count and
+    /// current streak right under the header. Audit #24. Always
+    /// visible so the user can see progress at a glance.
+    private var todayBar: some View {
+        let stats = statsObserver.stats
+        let todayWords = wordsToday()
+        return HStack(spacing: HDSpacing.lg.rawValue) {
+            stat(value: "\(todayWords)", label: "слов сегодня")
+            divider
+            stat(value: "\(stats.currentStreak) дн.", label: "текущая серия")
+            divider
+            stat(value: "\(stats.totalNotes)", label: "транскрибаций")
+            Spacer()
+        }
+        .padding(HDSpacing.md.rawValue)
+        .background(
+            RoundedRectangle(cornerRadius: HDRadius.md.rawValue, style: .continuous)
+                .fill(HDColor.softStone)
+        )
+    }
+
+    private func stat(value: String, label: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(value)
+                .font(.system(size: 18, weight: .semibold, design: .default))
+                .foregroundStyle(HDColor.ink)
+                .monospacedDigit()
+            Text(label.uppercased())
+                .font(HDFont.monoLabel(size: 9))
+                .hdTracking(0.5)
+                .foregroundStyle(HDColor.muted)
+        }
+    }
+
+    private var divider: some View {
+        Rectangle()
+            .fill(HDColor.cardBorder)
+            .frame(width: 1, height: 28)
+    }
+
+    private func wordsToday() -> Int {
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        return statsObserver.notes
+            .filter { cal.startOfDay(for: $0.frontmatter.createdAt) == today }
+            .reduce(0) { $0 + $1.frontmatter.words }
     }
 
     // MARK: - Header
@@ -78,7 +128,7 @@ struct HomeView: View {
     private var statusLabel: some View {
         VStack(spacing: HDSpacing.xs.rawValue) {
             Text(statusHeadline)
-                .font(HDFont.featureHeading)
+                .font(.system(size: 16, weight: .medium))   // was featureHeading (24px) — audit #20
                 .foregroundStyle(statusColor)
 
             if let err = appState.errorMessage {

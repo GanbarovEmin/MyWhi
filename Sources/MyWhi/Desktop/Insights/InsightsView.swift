@@ -14,15 +14,43 @@ struct InsightsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: HDSpacing.xxl.rawValue) {
-                heroStats
-                streakHeatmap
-                trendLine
-                languageBreakdown
+                if statsObserver.notes.isEmpty {
+                    insightsEmpty
+                } else {
+                    heroStats
+                    streakHeatmap
+                    trendLine
+                    languageBreakdown
+                }
             }
             .padding(HDSpacing.xxl.rawValue)
             .frame(maxWidth: .infinity)
         }
         .background(HDColor.canvas)
+        .task {
+            await statsObserver.refresh()
+        }
+    }
+
+    /// Onboarding empty state — when there are no notes, we show a
+    /// friendly call-to-action instead of zeros (audit #19).
+    private var insightsEmpty: some View {
+        VStack(spacing: HDSpacing.lg.rawValue) {
+            Image(systemName: "chart.bar.xaxis")
+                .font(.system(size: 56, weight: .ultraLight))
+                .foregroundStyle(HDColor.muted)
+            VStack(spacing: HDSpacing.xs.rawValue) {
+                Text("Пока пусто")
+                    .font(HDFont.cardHeading)
+                    .foregroundStyle(HDColor.ink)
+                Text("Запиши первую фразу на вкладке «Запись» —\nи здесь появятся твои слова, серии и streak heatmap.")
+                    .font(HDFont.body)
+                    .foregroundStyle(HDColor.muted)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(HDSpacing.xxl.rawValue)
     }
 
     // MARK: - Hero stats

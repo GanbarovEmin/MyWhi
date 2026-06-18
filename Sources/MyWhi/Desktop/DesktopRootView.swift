@@ -139,16 +139,30 @@ struct DesktopRootView: View {
 
     @ViewBuilder
     private var detail: some View {
-        switch selection {
-        case .home, .none:
-            HomeView()
-        case .scratchpad:
-            ScratchpadSplitView(selection: $scratchpadSelection)
-        case .insights:
-            InsightsView()
-        case .settings:
-            SettingsViewDesktop()
+        ZStack {
+            // Fade-in transition between sections (audit #21).
+            // id() forces SwiftUI to treat each section as a distinct
+            // view so the .transition fires on every change.
+            switch selection {
+            case .home, .none:
+                HomeView()
+                    .id(SidebarSection.home)
+                    .transition(.opacity.combined(with: .move(edge: .trailing)))
+            case .scratchpad:
+                ScratchpadSplitView(selection: $scratchpadSelection)
+                    .id(SidebarSection.scratchpad)
+                    .transition(.opacity)
+            case .insights:
+                InsightsView()
+                    .id(SidebarSection.insights)
+                    .transition(.opacity)
+            case .settings:
+                SettingsViewDesktop()
+                    .id(SidebarSection.settings)
+                    .transition(.opacity)
+            }
         }
+        .animation(.easeInOut(duration: 0.18), value: selection)
     }
 
     // MARK: - Notification handler

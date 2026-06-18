@@ -175,8 +175,17 @@ struct SettingsViewDesktop: View {
                         }
                     }
                 }
+
+                Divider()
+
+                Toggle("Тёмная тема (override system)", isOn: darkModeBinding)
+                    .help("Принудительно включить тёмную тему независимо от системных настроек macOS")
             }
         }
+    }
+
+    private var darkModeBinding: Binding<Bool> {
+        Binding(get: { appState.settings.useDarkMode }, set: { appState.settings.useDarkMode = $0 })
     }
 
     private var autoCopyBinding: Binding<Bool> {

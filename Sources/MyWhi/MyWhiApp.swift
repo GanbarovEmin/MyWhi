@@ -26,6 +26,7 @@ struct MyWhiApp: App {
                 .environmentObject(container)
                 .environmentObject(container.appState)
                 .environmentObject(container.appState.statsObserver)
+                .preferredColorScheme(container.appState.settings.useDarkMode ? .dark : nil)
                 .frame(minWidth: 900, minHeight: 600)
         }
         .defaultSize(width: 1100, height: 720)

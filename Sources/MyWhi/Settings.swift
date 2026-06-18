@@ -18,6 +18,7 @@ final class AppSettings: ObservableObject, Codable {
     @Published var autoCopy: Bool                  // copy transcript to clipboard on finish
     @Published var saveHistory: Bool               // save to vault on finish
     @Published var autoPaste: Bool                 // simulate Cmd+V into active app (opt-in, Phase 6.2)
+    @Published var useDarkMode: Bool               // override system color scheme (Phase 3.5)
 
     // MARK: Paths
 
@@ -60,7 +61,8 @@ final class AppSettings: ObservableObject, Codable {
         autoCopy: Bool = true,
         saveHistory: Bool = true,
         autoPaste: Bool = false,
-        pythonPath: String = AppSettings.defaultPythonPath
+        pythonPath: String = AppSettings.defaultPythonPath,
+        useDarkMode: Bool = false
     ) {
         // Validate inputs against known values; fall back to defaults so
         // a hand-edited settings file cannot crash the app.
@@ -77,6 +79,7 @@ final class AppSettings: ObservableObject, Codable {
         self.saveHistory = saveHistory
         self.autoPaste = autoPaste
         self.pythonPath = pythonPath.isEmpty ? AppSettings.defaultPythonPath : pythonPath
+        self.useDarkMode = useDarkMode
     }
 
     // MARK: - Persistence
@@ -118,7 +121,7 @@ final class AppSettings: ObservableObject, Codable {
     // MARK: - Codable
 
     enum CodingKeys: String, CodingKey {
-        case engine, modelSize, language, autoCopy, saveHistory, autoPaste, pythonPath
+        case engine, modelSize, language, autoCopy, saveHistory, autoPaste, pythonPath, useDarkMode
     }
 
     convenience init(from decoder: Decoder) throws {
@@ -131,7 +134,8 @@ final class AppSettings: ObservableObject, Codable {
             saveHistory: try c.decodeIfPresent(Bool.self, forKey: .saveHistory) ?? true,
             autoPaste: try c.decodeIfPresent(Bool.self, forKey: .autoPaste) ?? false,
             pythonPath: try c.decodeIfPresent(String.self, forKey: .pythonPath)
-                ?? AppSettings.defaultPythonPath
+                ?? AppSettings.defaultPythonPath,
+            useDarkMode: try c.decodeIfPresent(Bool.self, forKey: .useDarkMode) ?? false
         )
     }
 
@@ -144,5 +148,6 @@ final class AppSettings: ObservableObject, Codable {
         try c.encode(saveHistory, forKey: .saveHistory)
         try c.encode(autoPaste, forKey: .autoPaste)
         try c.encode(pythonPath, forKey: .pythonPath)
+        try c.encode(useDarkMode, forKey: .useDarkMode)
     }
 }
