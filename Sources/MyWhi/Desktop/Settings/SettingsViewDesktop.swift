@@ -233,6 +233,37 @@ struct SettingsViewDesktop: View {
 
                 Toggle("Push-to-talk (hold-to-record)", isOn: pushToTalkBinding)
                     .help("Удерживай горячую клавишу чтобы записать, отпусти чтобы остановить. По умолчанию — toggle.")
+
+                HStack(spacing: HDSpacing.sm.rawValue) {
+                    Text("Окно live-декода:")
+                        .font(HDFont.formLabel)
+                        .foregroundStyle(theme.ink)
+                    Picker("", selection: liveWindowBinding) {
+                        Text("4 сек").tag(4)
+                        Text("6 сек").tag(6)
+                        Text("8 сек (стандарт)").tag(8)
+                        Text("12 сек").tag(12)
+                        Text("20 сек").tag(20)
+                    }
+                    .pickerStyle(.menu)
+                    .frame(maxWidth: 220)
+                    Spacer()
+                }
+                .help("Сколько секунд последнего аудио декодировать в каждом live-тике. Меньше — отзывчивее, больше — стабильнее.")
+
+                HStack(spacing: HDSpacing.sm.rawValue) {
+                    Text("Позиция floating HUD:")
+                        .font(HDFont.formLabel)
+                        .foregroundStyle(theme.ink)
+                    Picker("", selection: hudPositionBinding) {
+                        Text("Сверху (по умолчанию)").tag(AppSettings.HUDPosition.top)
+                        Text("Снизу (Wispr Flow)").tag(AppSettings.HUDPosition.bottom)
+                    }
+                    .pickerStyle(.menu)
+                    .frame(maxWidth: 240)
+                    Spacer()
+                }
+                .help("Где показывать плавающее окно во время записи.")
             }
         }
     }
@@ -259,6 +290,20 @@ struct SettingsViewDesktop: View {
     private var pushToTalkBinding: Binding<Bool> {
         Binding(get: { appState.settings.pushToTalkMode },
                 set: { appState.settings.pushToTalkMode = $0 })
+    }
+
+    private var liveWindowBinding: Binding<Int> {
+        Binding(
+            get: { appState.settings.liveWindowSeconds },
+            set: { appState.settings.liveWindowSeconds = $0 }
+        )
+    }
+
+    private var hudPositionBinding: Binding<AppSettings.HUDPosition> {
+        Binding(
+            get: { appState.settings.hudPosition },
+            set: { appState.settings.hudPosition = $0 }
+        )
     }
 
     private var hotkeyDisplay: String {

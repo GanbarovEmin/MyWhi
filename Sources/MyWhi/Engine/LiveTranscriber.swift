@@ -64,11 +64,22 @@ final class LiveTranscriber {
 
         pollTask = Task { @MainActor [weak self] in
             guard let self else { return }
+            // Phase 14: the sliding window size comes from the user's
+            // settings (4-30s, default 8s). Smaller windows give
+            // lower per-tick latency but choppier text; larger ones
+            // give smoother text but cost more decode time per tick.
+            let windowSeconds = Double(max(1, appState?.settings.liveWindowSeconds ?? 8))
+
             // Wait one interval before the first decode — let some audio
             // accumulate so the result isn't a 100ms fragment.
             try? await Task.sleep(nanoseconds: UInt64(self.decodeInterval * 1_000_000_000))
             while !Task.isCancelled {
-                await self.runOnce(model: model, language: language, onPartial: onPartial)
+                await self.runOnce(
+                    model: model,
+                    language: language,
+                    windowSeconds: windowSeconds,
+                    onPartial: onPartial
+                )
                 try? await Task.sleep(nanoseconds: UInt64(self.decodeInterval * 1_000_000_000))
             }
         }
@@ -84,8 +95,16 @@ final class LiveTranscriber {
 
     // MARK: - Internals
 
-    private func runOnce(model: String, language: String, onPartial: (String) -> Void) async {
-        let snapshot = recorder.takeLiveSnapshot()
+    private func runOnce(
+        model: String,
+        language: String,
+        windowSeconds: Double,
+        onPartial: (String) -> Void
+    ) async {
+        // Phase 14: sliding window. With windowSeconds=0 we'd decode
+        // the whole buffer (Phase 8 behavior, kept for tests); with
+        // windowSeconds=8 we decode only the last 8 seconds.
+        let snapshot = recorder.takeLiveSnapshot(windowSeconds: windowSeconds)
         guard snapshot.samples.count > Int(16_000 * 0.5) else {  // need >= 0.5s
             return
         }
@@ -106,9 +125,20 @@ final class LiveTranscriber {
                 language: language
             )
             let trimmed = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty, trimmed != lastPartialText else { return }
-            lastPartialText = trimmed
-            onPartial(trimmed)
+            guard !trimmed.isEmpty else { return }
+
+            // Phase 14: sliding-window merge. With sliding window, the
+            // audio range WhisperKit sees shifts forward each tick, so
+            // consecutive decodes overlap on the boundary words. We
+            // stitch them so the user sees a continuous stream of text
+            // instead of flickering between old and new windows.
+            let merged = PartialTextMerger.merge(
+                previous: lastPartialText,
+                next: trimmed
+            )
+            guard merged != lastPartialText else { return }
+            lastPartialText = merged
+            onPartial(merged)
         } catch {
             // Partial decode failures are non-fatal — the final decode
             // on stop will retry against the full file. Log quietly.

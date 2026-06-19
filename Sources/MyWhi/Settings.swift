@@ -39,6 +39,14 @@ final class AppSettings: ObservableObject, Codable {
     /// parity feature. Off = legacy behavior (text only after stop).
     @Published var liveStreamingEnabled: Bool
 
+    /// How many seconds of audio the live-streaming loop decodes per
+    /// tick. Smaller = lower latency per partial update but more
+    /// likely to miss the start of words; larger = steadier text but
+    /// higher decode cost per tick. Default 8s — a good balance for
+    /// dictation (about one phrase). With Phase 14 sliding window,
+    /// cost per tick is constant regardless of recording duration.
+    @Published var liveWindowSeconds: Int
+
     /// Show a soft chime on record start/stop (Phase 9). Default ON.
     @Published var soundFeedbackEnabled: Bool
 
@@ -56,6 +64,16 @@ final class AppSettings: ObservableObject, Codable {
     /// key to record, release to stop). When OFF (default), the hotkey
     /// toggles recording on each press.
     @Published var pushToTalkMode: Bool
+
+    // MARK: Floating HUD position (Phase 15)
+
+    /// Where to anchor the floating HUD panel. Wispr Flow uses bottom
+    /// (near the cursor); MyWhi defaults to top (legacy). Power users
+    /// can flip this from the menu bar right-click.
+    enum HUDPosition: String, Codable {
+        case top, bottom
+    }
+    @Published var hudPosition: HUDPosition
 
     // MARK: Available values
 
@@ -84,9 +102,11 @@ final class AppSettings: ObservableObject, Codable {
         hotkeyModifiers: UInt32 = UInt32(cmdKey | optionKey),
         hotkeyKeyCode: UInt32 = 0x02,   // kVK_ANSI_D
         liveStreamingEnabled: Bool = true,
+        liveWindowSeconds: Int = 8,
         soundFeedbackEnabled: Bool = true,
         inlineEditorMode: Bool = false,
-        pushToTalkMode: Bool = false
+        pushToTalkMode: Bool = false,
+        hudPosition: HUDPosition = .top
     ) {
         // Validate inputs against known values; fall back to defaults so
         // a hand-edited settings file cannot crash the app.
@@ -95,6 +115,10 @@ final class AppSettings: ObservableObject, Codable {
 
         let validLangCodes = AppSettings.availableLanguages.map(\.code)
         self.language = validLangCodes.contains(language) ? language : "ru"
+
+        // Validate window seconds: 4-30s range.
+        let clampedWindow = max(4, min(30, liveWindowSeconds))
+        self.liveWindowSeconds = clampedWindow
 
         self.autoCopy = autoCopy
         self.saveHistory = saveHistory
@@ -106,6 +130,7 @@ final class AppSettings: ObservableObject, Codable {
         self.soundFeedbackEnabled = soundFeedbackEnabled
         self.inlineEditorMode = inlineEditorMode
         self.pushToTalkMode = pushToTalkMode
+        self.hudPosition = hudPosition
     }
 
     // MARK: - Persistence
@@ -154,11 +179,16 @@ final class AppSettings: ObservableObject, Codable {
     enum CodingKeys: String, CodingKey {
         case modelSize, language, autoCopy, saveHistory, autoPaste, useDarkMode,
              hotkeyModifiers, hotkeyKeyCode, liveStreamingEnabled, soundFeedbackEnabled,
-             inlineEditorMode, pushToTalkMode
+             inlineEditorMode, pushToTalkMode, liveWindowSeconds, hudPosition
     }
 
     convenience init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        let hudPosRaw = try c.decodeIfPresent(String.self, forKey: .hudPosition)
+        let hudPos: HUDPosition = {
+            if let raw = hudPosRaw, let pos = HUDPosition(rawValue: raw) { return pos }
+            return .top
+        }()
         self.init(
             modelSize: try c.decodeIfPresent(String.self, forKey: .modelSize) ?? "small",
             language: try c.decodeIfPresent(String.self, forKey: .language) ?? "ru",
@@ -173,11 +203,14 @@ final class AppSettings: ObservableObject, Codable {
             // Phase 8 / 9: default-on for both. Old settings.json files
             // that don't have these keys decode as true.
             liveStreamingEnabled: try c.decodeIfPresent(Bool.self, forKey: .liveStreamingEnabled) ?? true,
+            // Phase 14: default 8s sliding window.
+            liveWindowSeconds: try c.decodeIfPresent(Int.self, forKey: .liveWindowSeconds) ?? 8,
             soundFeedbackEnabled: try c.decodeIfPresent(Bool.self, forKey: .soundFeedbackEnabled) ?? true,
             // Phase 11 / 13: default OFF for backward compatibility with
             // existing users.
             inlineEditorMode: try c.decodeIfPresent(Bool.self, forKey: .inlineEditorMode) ?? false,
-            pushToTalkMode: try c.decodeIfPresent(Bool.self, forKey: .pushToTalkMode) ?? false
+            pushToTalkMode: try c.decodeIfPresent(Bool.self, forKey: .pushToTalkMode) ?? false,
+            hudPosition: hudPos
         )
     }
 
@@ -195,5 +228,7 @@ final class AppSettings: ObservableObject, Codable {
         try c.encode(soundFeedbackEnabled, forKey: .soundFeedbackEnabled)
         try c.encode(inlineEditorMode, forKey: .inlineEditorMode)
         try c.encode(pushToTalkMode, forKey: .pushToTalkMode)
+        try c.encode(liveWindowSeconds, forKey: .liveWindowSeconds)
+        try c.encode(hudPosition.rawValue, forKey: .hudPosition)
     }
 }

@@ -601,9 +601,22 @@ final class AudioRecorder: NSObject, ObservableObject {
     /// Snapshot the rolling audio buffer at the input sample rate.
     /// Returns `(samples, sampleRate)`. Empty if no recording is
     /// active.
-    func takeLiveSnapshot() -> (samples: [Float], sampleRate: Double) {
+    ///
+    /// Phase 14: when `windowSeconds > 0`, only the most recent
+    /// `windowSeconds` worth of samples are returned (sliding window
+    /// for live-streaming partial decodes). When `windowSeconds == 0`,
+    /// the full rolling buffer is returned — used by the final
+    /// decode-on-stop which wants the entire recording.
+    func takeLiveSnapshot(windowSeconds: Double = 0) -> (samples: [Float], sampleRate: Double) {
         let (s, r) = liveSamplesLock.withLock { (liveSamples, liveSampleRate) }
-        return (s, r)
+        guard windowSeconds > 0, r > 0 else {
+            return (s, r)
+        }
+        let maxSamples = Int(windowSeconds * r)
+        if s.count <= maxSamples {
+            return (s, r)
+        }
+        return (Array(s.suffix(maxSamples)), r)
     }
 
     /// Reset the rolling live buffer. Called when recording stops.

@@ -133,6 +133,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             .store(in: &cancellables)
 
+        // Phase 15: reposition the HUD when the user toggles
+        // hudPosition in Settings.
+        appState.settings.$hudPosition
+            .receive(on: RunLoop.main)
+            .dropFirst()  // skip initial value (HUD already positioned)
+            .sink { [weak self] _ in
+                self?.positionFloatingHUD()
+            }
+            .store(in: &cancellables)
+
         // When the router switches to .desktop, activate the app so the
         // Dock icon appears and windows come forward.
         sceneRouter.$mode
@@ -269,7 +279,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let width: CGFloat = 420
         let height: CGFloat = 86
         let x = frame.midX - width / 2
-        let y = frame.maxY - height - 24
+        // Phase 15: respect hudPosition setting. Wispr Flow convention
+        // is bottom (close to where the text lands). MyWhi legacy
+        // default is top. We pin to a small inset so the panel
+        // doesn't crowd the screen edge.
+        let yInset: CGFloat = 24
+        let y: CGFloat
+        switch appState.settings.hudPosition {
+        case .top:
+            y = frame.maxY - height - yInset
+        case .bottom:
+            y = frame.minY + yInset
+        }
         panel.setFrame(NSRect(x: x, y: y, width: width, height: height), display: true)
     }
 
