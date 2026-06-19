@@ -146,6 +146,11 @@ struct HomeView: View {
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: 560)
                         .padding(.horizontal, HDSpacing.xl.rawValue)
+                        // Phase 16: cross-fade between consecutive
+                        // partial decodes (the merge logic in Phase 14
+                        // already produces a stable, monotonic text —
+                        // this just makes the visual handoff smooth).
+                        .contentTransition(.opacity)
                         .transition(.opacity)
                 }
             }

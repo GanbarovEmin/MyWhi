@@ -32,6 +32,13 @@ struct FloatingVoiceHUDView: View {
                             .font(HDFont.hudLiveText)
                             .foregroundStyle(theme.ink)
                             .lineLimit(2)
+                            // Phase 16: fade between consecutive partial
+                            // decodes. The merge logic in Phase 14
+                            // already produces a stable, monotonic
+                            // text — `.contentTransition(.opacity)`
+                            // cross-fades old → new smoothly instead
+                            // of the abrupt string swap.
+                            .contentTransition(.opacity)
                             .transition(.opacity)
                     } else {
                         HDWaveformView(
