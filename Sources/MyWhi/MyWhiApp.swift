@@ -22,12 +22,14 @@ struct MyWhiApp: App {
 
         // --- Main desktop shell ---
         WindowGroup("MyWhi", id: "desktop") {
-            DesktopRootView()
-                .environmentObject(container)
-                .environmentObject(container.appState)
-                .environmentObject(container.appState.statsObserver)
-                .preferredColorScheme(container.appState.settings.useDarkMode ? .dark : nil)
-                .frame(minWidth: 900, minHeight: 600)
+            HDThemeRoot {
+                DesktopRootView()
+                    .environmentObject(container)
+                    .environmentObject(container.appState)
+                    .environmentObject(container.appState.statsObserver)
+                    .preferredColorScheme(container.appState.settings.useDarkMode ? .dark : nil)
+                    .frame(minWidth: 900, minHeight: 600)
+            }
         }
         .defaultSize(width: 1100, height: 720)
         .windowResizability(.contentMinSize)
@@ -61,8 +63,10 @@ struct MyWhiApp: App {
 
         // --- Design system preview (alpha dev tool) ---
         WindowGroup("Design Preview", id: "design-preview") {
-            DesignPreviewWindow()
-                .environmentObject(container)
+            HDThemeRoot {
+                DesignPreviewWindow()
+                    .environmentObject(container)
+            }
         }
         .defaultSize(width: 820, height: 760)
         .windowResizability(.contentMinSize)
@@ -113,9 +117,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         popover.behavior = .transient
         popover.contentSize = NSSize(width: 380, height: 540)
         popover.contentViewController = NSHostingController(
-            rootView: MainPopoverView()
-                .environmentObject(container)
-                .environmentObject(appState)
+            rootView: HDThemeRoot {
+                MainPopoverView()
+                    .environmentObject(self.container)
+                    .environmentObject(self.appState)
+            }
         )
 
         // Re-render status icon whenever AppState.status changes.
@@ -227,7 +233,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func showFloatingHUD() {
         if floatingHUDPanel == nil {
             let panel = NSPanel(
-                contentRect: NSRect(x: 0, y: 0, width: 380, height: 86),
+                contentRect: NSRect(x: 0, y: 0, width: 420, height: 86),
                 styleMask: [.borderless, .nonactivatingPanel],
                 backing: .buffered,
                 defer: false
@@ -240,8 +246,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             panel.hidesOnDeactivate = false
             panel.isMovableByWindowBackground = false
             panel.contentViewController = NSHostingController(
-                rootView: FloatingVoiceHUDView()
-                    .environmentObject(appState)
+                rootView: HDThemeRoot {
+                    FloatingVoiceHUDView()
+                        .environmentObject(self.appState)
+                }
             )
             floatingHUDPanel = panel
         }
@@ -258,7 +266,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let panel = floatingHUDPanel else { return }
         let screen = NSScreen.main ?? NSScreen.screens.first
         guard let frame = screen?.visibleFrame else { return }
-        let width: CGFloat = 380
+        let width: CGFloat = 420
         let height: CGFloat = 86
         let x = frame.midX - width / 2
         let y = frame.maxY - height - 24

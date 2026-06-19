@@ -32,6 +32,16 @@ final class AppSettings: ObservableObject, Codable {
     /// macOS virtual key code. Default 0x02 = D key.
     @Published var hotkeyKeyCode: UInt32
 
+    // MARK: Live streaming (Phase 8)
+
+    /// Show partial transcripts in the floating HUD as the user speaks
+    /// (Phase 8 streaming). Default ON — this is the headline Wispr-Flow
+    /// parity feature. Off = legacy behavior (text only after stop).
+    @Published var liveStreamingEnabled: Bool
+
+    /// Show a soft chime on record start/stop (Phase 9). Default ON.
+    @Published var soundFeedbackEnabled: Bool
+
     // MARK: Available values
 
     static let availableModels: [(code: String, label: String, description: String)] = [
@@ -57,7 +67,9 @@ final class AppSettings: ObservableObject, Codable {
         autoPaste: Bool = false,
         useDarkMode: Bool = false,
         hotkeyModifiers: UInt32 = UInt32(cmdKey | optionKey),
-        hotkeyKeyCode: UInt32 = 0x02   // kVK_ANSI_D
+        hotkeyKeyCode: UInt32 = 0x02,   // kVK_ANSI_D
+        liveStreamingEnabled: Bool = true,
+        soundFeedbackEnabled: Bool = true
     ) {
         // Validate inputs against known values; fall back to defaults so
         // a hand-edited settings file cannot crash the app.
@@ -73,6 +85,8 @@ final class AppSettings: ObservableObject, Codable {
         self.useDarkMode = useDarkMode
         self.hotkeyModifiers = hotkeyModifiers
         self.hotkeyKeyCode = hotkeyKeyCode
+        self.liveStreamingEnabled = liveStreamingEnabled
+        self.soundFeedbackEnabled = soundFeedbackEnabled
     }
 
     // MARK: - Persistence
@@ -120,7 +134,7 @@ final class AppSettings: ObservableObject, Codable {
 
     enum CodingKeys: String, CodingKey {
         case modelSize, language, autoCopy, saveHistory, autoPaste, useDarkMode,
-             hotkeyModifiers, hotkeyKeyCode
+             hotkeyModifiers, hotkeyKeyCode, liveStreamingEnabled, soundFeedbackEnabled
     }
 
     convenience init(from decoder: Decoder) throws {
@@ -135,7 +149,11 @@ final class AppSettings: ObservableObject, Codable {
             hotkeyModifiers: try c.decodeIfPresent(UInt32.self, forKey: .hotkeyModifiers)
                 ?? UInt32(cmdKey | optionKey),
             hotkeyKeyCode: try c.decodeIfPresent(UInt32.self, forKey: .hotkeyKeyCode)
-                ?? 0x02   // kVK_ANSI_D
+                ?? 0x02,   // kVK_ANSI_D
+            // Phase 8 / 9: default-on for both. Old settings.json files
+            // that don't have these keys decode as true.
+            liveStreamingEnabled: try c.decodeIfPresent(Bool.self, forKey: .liveStreamingEnabled) ?? true,
+            soundFeedbackEnabled: try c.decodeIfPresent(Bool.self, forKey: .soundFeedbackEnabled) ?? true
         )
     }
 
@@ -149,5 +167,7 @@ final class AppSettings: ObservableObject, Codable {
         try c.encode(useDarkMode, forKey: .useDarkMode)
         try c.encode(hotkeyModifiers, forKey: .hotkeyModifiers)
         try c.encode(hotkeyKeyCode, forKey: .hotkeyKeyCode)
+        try c.encode(liveStreamingEnabled, forKey: .liveStreamingEnabled)
+        try c.encode(soundFeedbackEnabled, forKey: .soundFeedbackEnabled)
     }
 }

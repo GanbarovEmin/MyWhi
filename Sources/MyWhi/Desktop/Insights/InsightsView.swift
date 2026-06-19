@@ -4,12 +4,17 @@
 //   2. Streak heatmap — 7 columns × N weeks, cells colored by activity
 //   3. Trend line — last 30 days, words/day
 //   4. Language breakdown — horizontal bars
+//
+// Phase 7: HDTheme migration, hardcoded fonts → HDFont tokens.
+//   Performance: heatmap grid is now cached in @State and only rebuilt
+//   when last30Days actually changes.
 
 import SwiftUI
 
 struct InsightsView: View {
 
     @EnvironmentObject private var statsObserver: StatsObserver
+    @Environment(\.hdTheme) private var theme
 
     var body: some View {
         ScrollView {
@@ -26,7 +31,7 @@ struct InsightsView: View {
             .padding(HDSpacing.xxl.rawValue)
             .frame(maxWidth: .infinity)
         }
-        .background(HDColor.canvas)
+        .background(theme.canvas)
         .task {
             await statsObserver.refresh()
         }
@@ -34,23 +39,27 @@ struct InsightsView: View {
 
     /// Onboarding empty state — when there are no notes, we show a
     /// friendly call-to-action instead of zeros (audit #19).
+    ///
+    /// Phase 9: subtle fade-in + scale transition so empty states feel
+    /// intentional, not jarring.
     private var insightsEmpty: some View {
         VStack(spacing: HDSpacing.lg.rawValue) {
             Image(systemName: "chart.bar.xaxis")
-                .font(.system(size: 56, weight: .ultraLight))
-                .foregroundStyle(HDColor.muted)
+                .font(HDFont.emptyHero)
+                .foregroundStyle(theme.muted)
             VStack(spacing: HDSpacing.xs.rawValue) {
                 Text("Пока пусто")
                     .font(HDFont.cardHeading)
-                    .foregroundStyle(HDColor.ink)
+                    .foregroundStyle(theme.ink)
                 Text("Запиши первую фразу на вкладке «Запись» —\nи здесь появятся твои слова, серии и streak heatmap.")
                     .font(HDFont.body)
-                    .foregroundStyle(HDColor.muted)
+                    .foregroundStyle(theme.muted)
                     .multilineTextAlignment(.center)
             }
         }
         .frame(maxWidth: .infinity)
         .padding(HDSpacing.xxl.rawValue)
+        .transition(.opacity.combined(with: .scale(scale: 0.96)))
     }
 
     // MARK: - Hero stats
@@ -61,11 +70,11 @@ struct InsightsView: View {
                 Text("INSIGHTS")
                     .font(HDFont.monoLabel(size: 12))
                     .hdTracking(0.5)
-                    .foregroundStyle(HDColor.muted)
+                    .foregroundStyle(theme.muted)
                 Text("Как много ты сказал")
                     .font(HDFont.cardHeading)
                     .hdTracking(-0.32)
-                    .foregroundStyle(HDColor.ink)
+                    .foregroundStyle(theme.ink)
             }
 
             HDSectionBand(cornerRadius: .lg, padding: .xl) {
@@ -108,10 +117,10 @@ struct InsightsView: View {
         VStack(alignment: .leading, spacing: HDSpacing.md.rawValue) {
             Text("Streak")
                 .font(HDFont.featureHeading)
-                .foregroundStyle(HDColor.ink)
+                .foregroundStyle(theme.ink)
             Text("Последние 26 недель активности")
                 .font(HDFont.caption)
-                .foregroundStyle(HDColor.muted)
+                .foregroundStyle(theme.muted)
 
             StreakHeatmapView(
                 last30Days: statsObserver.stats.last30Days,
@@ -127,17 +136,17 @@ struct InsightsView: View {
         VStack(alignment: .leading, spacing: HDSpacing.md.rawValue) {
             Text("Динамика")
                 .font(HDFont.featureHeading)
-                .foregroundStyle(HDColor.ink)
+                .foregroundStyle(theme.ink)
             Text("Слов в день за последние 30 дней")
                 .font(HDFont.caption)
-                .foregroundStyle(HDColor.muted)
+                .foregroundStyle(theme.muted)
 
             TrendLineView(values: statsObserver.stats.last30Days)
                 .frame(height: 140)
                 .padding(HDSpacing.lg.rawValue)
                 .background(
                     RoundedRectangle(cornerRadius: HDRadius.lg.rawValue, style: .continuous)
-                        .fill(HDColor.softStone)
+                        .fill(theme.surfaceStone)
                 )
         }
     }
@@ -151,15 +160,15 @@ struct InsightsView: View {
         return VStack(alignment: .leading, spacing: HDSpacing.md.rawValue) {
             Text("Языки")
                 .font(HDFont.featureHeading)
-                .foregroundStyle(HDColor.ink)
+                .foregroundStyle(theme.ink)
             Text("Распределение слов по языкам")
                 .font(HDFont.caption)
-                .foregroundStyle(HDColor.muted)
+                .foregroundStyle(theme.muted)
 
             if byLang.isEmpty {
                 Text("Пока нет данных")
                     .font(HDFont.caption)
-                    .foregroundStyle(HDColor.muted)
+                    .foregroundStyle(theme.muted)
             } else {
                 VStack(spacing: HDSpacing.sm.rawValue) {
                     ForEach(byLang.sorted(by: { $0.value > $1.value }), id: \.key) { lang, words in
@@ -169,7 +178,7 @@ struct InsightsView: View {
                 .padding(HDSpacing.lg.rawValue)
                 .background(
                     RoundedRectangle(cornerRadius: HDRadius.lg.rawValue, style: .continuous)
-                        .fill(HDColor.softStone)
+                        .fill(theme.surfaceStone)
                 )
             }
         }
@@ -195,8 +204,14 @@ private struct StreakHeatmapView: View {
 
     private let weeksToShow = 26
 
+    @Environment(\.hdTheme) private var theme
+
+    // Cache the grid. Recompute only when the data changes.
+    @State private var gridCache: [[Int]] = []
+    @State private var lastCacheKey: String = ""
+
     var body: some View {
-        let grid = buildGrid()
+        let grid = ensureCache()
         ScrollView(.horizontal, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .top, spacing: 3) {
@@ -212,17 +227,29 @@ private struct StreakHeatmapView: View {
                 HStack {
                     Text("Меньше")
                         .font(HDFont.micro)
-                        .foregroundStyle(HDColor.muted)
+                        .foregroundStyle(theme.muted)
                     ForEach(0..<5, id: \.self) { i in
                         cell(value: i)
                     }
                     Text("Больше")
                         .font(HDFont.micro)
-                        .foregroundStyle(HDColor.muted)
+                        .foregroundStyle(theme.muted)
                 }
             }
             .padding(.vertical, 4)
         }
+    }
+
+    /// Build or reuse the cached grid based on a stable key derived from
+    /// the input data. ~26 weeks * 7 days = 182 cells — small, but the
+    /// old code rebuilt the array on every parent re-render.
+    private func ensureCache() -> [[Int]] {
+        let key = last30Days.map(String.init).joined(separator: ",")
+        if key != lastCacheKey {
+            gridCache = buildGrid()
+            lastCacheKey = key
+        }
+        return gridCache
     }
 
     private func cell(value: Int) -> some View {
@@ -233,11 +260,11 @@ private struct StreakHeatmapView: View {
 
     private func colorFor(value: Int) -> Color {
         switch value {
-        case 0: return HDColor.borderLight
-        case 1: return HDColor.paleGreen
-        case 2: return HDColor.coralSoft
-        case 3: return HDColor.coral
-        default: return HDColor.deepGreen
+        case 0: return theme.border
+        case 1: return theme.surfacePaleGreen
+        case 2: return theme.coralSoft
+        case 3: return theme.coral
+        default: return theme.deepGreen
         }
     }
 
@@ -247,7 +274,6 @@ private struct StreakHeatmapView: View {
         var grid: [[Int]] = []
         let recent = Array(last30Days.suffix(weeksToShow * 7))
 
-        // Pad to weeksToShow * 7 if we have less data.
         var padded = recent
         while padded.count < weeksToShow * 7 {
             padded.insert(0, at: 0)
@@ -271,6 +297,8 @@ private struct TrendLineView: View {
 
     let values: [Int]
 
+    @Environment(\.hdTheme) private var theme
+
     var body: some View {
         GeometryReader { geo in
             let maxV = max(values.max() ?? 0, 1)
@@ -289,13 +317,13 @@ private struct TrendLineView: View {
             }
             ZStack(alignment: .topLeading) {
                 path
-                    .stroke(HDColor.coral, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                    .stroke(theme.coral, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
 
                 if let last = values.last, values.count > 0 {
                     let x = CGFloat(values.count - 1) * stepX
                     let y = geo.size.height - (CGFloat(last) / CGFloat(maxV)) * geo.size.height
                     Circle()
-                        .fill(HDColor.coral)
+                        .fill(theme.coral)
                         .frame(width: 8, height: 8)
                         .position(x: x, y: y)
                 }
@@ -307,6 +335,8 @@ private struct TrendLineView: View {
 // MARK: - Language row
 
 private struct LanguageRow: View {
+
+    @Environment(\.hdTheme) private var theme
 
     let language: String
     let words: Int
@@ -324,25 +354,25 @@ private struct LanguageRow: View {
     var body: some View {
         HStack(spacing: HDSpacing.md.rawValue) {
             Text(languageName)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(HDColor.ink)
+                .font(HDFont.formLabel)
+                .foregroundStyle(theme.ink)
                 .frame(width: 90, alignment: .leading)
 
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 4)
-                        .fill(HDColor.borderLight)
+                        .fill(theme.border)
                         .frame(height: 8)
                     RoundedRectangle(cornerRadius: 4)
-                        .fill(HDColor.coral)
+                        .fill(theme.coral)
                         .frame(width: geo.size.width * CGFloat(words) / CGFloat(max(maxWords, 1)), height: 8)
                 }
             }
             .frame(height: 8)
 
             Text("\(words)")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(HDColor.muted)
+                .font(HDFont.noteMeta)
+                .foregroundStyle(theme.muted)
                 .frame(width: 80, alignment: .trailing)
         }
         .frame(height: 24)

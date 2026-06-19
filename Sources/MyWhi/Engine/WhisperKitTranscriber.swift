@@ -111,11 +111,17 @@ final class WhisperKitTranscriber: Transcriber, @unchecked Sendable {
         //                                  and we retry up to 5 times —
         //                                  usually enough to escape a
         //                                  hallucination loop on noisy input.
-        //   - promptPrefix                → a short prefix that nudges
-        //                                  the decoder to use proper
-        //                                  punctuation. Optional but helps
-        //                                  on languages that often come
-        //                                  out as a wall of text.
+        //   - promptTokens                → DEFERRED. WhisperKit's
+        //                                  DecodingOptions takes
+        //                                  `promptTokens: [Int]?`, not a
+        //                                  string. Implementing voice
+        //                                  commands ("new line" → \n,
+        //                                  "period" → ".") requires
+        //                                  tokenizing the prompt through
+        //                                  the model-specific tokenizer,
+        //                                  which is doable but adds
+        //                                  coupling. Tracking as
+        //                                  Phase 8.3-extra.
         let langArg: String? = (language == "auto" || language.isEmpty) ? nil : language
         let options = DecodingOptions(
             task: .transcribe,
@@ -176,4 +182,20 @@ final class WhisperKitTranscriber: Transcriber, @unchecked Sendable {
         default:                                  return "small"  // safe default
         }
     }
+
+    // MARK: - Voice-command prompt (Phase 8.3 — DEFERRED)
+    //
+    // WhisperKit's DecodingOptions accepts `promptTokens: [Int]?`, not a
+    // raw string. To bias the decoder toward voice commands like "new
+    // line" → \n, "period" → ".", we would need to tokenize the prompt
+    // through the model's tokenizer at runtime. That's straightforward
+    // but adds coupling (tokenizer API varies across Whisper models).
+    //
+    // For now, voice commands are not implemented. Punctuation is still
+    // correct because we keep `skipSpecialTokens: false` and disable VAD
+    // chunking (which was the main source of punctuation collapse in v1).
+    //
+    // When implementing: cache token IDs for a known set of
+    // multi-language prompts ("Period.", "New line.", "Comma,", etc.)
+    // and pass them via `options.promptTokens`.
 }

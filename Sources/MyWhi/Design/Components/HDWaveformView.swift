@@ -12,6 +12,9 @@
 // (no fixed Hz, no timer). Each segment's height is computed as a
 // function of (level, time, segmentIndex) with a per-segment phase
 // offset so the wave looks organic, not synchronized.
+//
+// Phase 7: color now respects the caller-supplied value (which should
+// be a theme color); no internal HDColor references remain.
 
 import SwiftUI
 

@@ -2,6 +2,8 @@
 // Right pane of the Scratchpad section. Renders one transcript note
 // with a header (frontmatter meta + coral pill), a monospaced
 // TextEditor for editing the body, and a toolbar (Copy / Save / Delete).
+//
+// Phase 7: HDTheme migration, hardcoded fonts → HDFont tokens.
 
 import SwiftUI
 
@@ -10,6 +12,7 @@ struct ScratchpadDetailView: View {
     let note: TranscriptNote
     @EnvironmentObject private var statsObserver: StatsObserver
     @EnvironmentObject private var appState: AppState
+    @Environment(\.hdTheme) private var theme
 
     @State private var bodyText: String = ""
     @State private var isDirty: Bool = false
@@ -24,7 +27,7 @@ struct ScratchpadDetailView: View {
             Divider()
             toolbar
         }
-        .background(HDColor.canvas)
+        .background(theme.canvas)
         .onAppear {
             bodyText = note.body
             isDirty = false
@@ -64,10 +67,10 @@ struct ScratchpadDetailView: View {
                 Text(dateString(note.frontmatter.createdAt))
                     .font(HDFont.monoLabel(size: 11))
                     .hdTracking(0.4)
-                    .foregroundStyle(HDColor.muted)
+                    .foregroundStyle(theme.muted)
 
                 Text(enginePillName)
-                    .font(.system(size: 10, weight: .medium))
+                    .font(HDFont.badge)
                     .padding(.horizontal, HDSpacing.xs.rawValue + 2)
                     .padding(.vertical, 2)
                     .background(
@@ -77,49 +80,49 @@ struct ScratchpadDetailView: View {
                     .foregroundStyle(enginePillColor.1)
 
                 Text("· \(note.frontmatter.model)")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(HDColor.muted)
+                    .font(HDFont.badge)
+                    .foregroundStyle(theme.muted)
 
                 Spacer()
 
                 if isDirty {
                     Text("не сохранено")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(HDColor.coral)
+                        .font(HDFont.badge)
+                        .foregroundStyle(theme.coral)
                 } else {
                     Text("сохранено")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(HDColor.muted)
+                        .font(HDFont.badge)
+                        .foregroundStyle(theme.muted)
                 }
             }
             HStack(spacing: HDSpacing.md.rawValue) {
                 Text("\(note.frontmatter.words) слов")
                     .font(HDFont.micro)
-                    .foregroundStyle(HDColor.muted)
+                    .foregroundStyle(theme.muted)
                 Text("\(note.frontmatter.chars) символов")
                     .font(HDFont.micro)
-                    .foregroundStyle(HDColor.muted)
+                    .foregroundStyle(theme.muted)
                 if let audio = note.frontmatter.audio {
                     Text(audio)
                         .font(HDFont.micro)
-                        .foregroundStyle(HDColor.muted)
+                        .foregroundStyle(theme.muted)
                         .truncationMode(.middle)
                 }
             }
         }
         .padding(HDSpacing.xl.rawValue)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(HDColor.canvas)
+        .background(theme.canvas)
     }
 
     // MARK: - Editor
 
     private var editor: some View {
         TextEditor(text: $bodyText)
-            .font(.system(size: 14, design: .monospaced))
-            .foregroundStyle(HDColor.ink)
+            .font(HDFont.editorBody)
+            .foregroundStyle(theme.ink)
             .scrollContentBackground(.hidden)
-            .background(HDColor.canvas)
+            .background(theme.canvas)
             .padding(HDSpacing.lg.rawValue)
             .onChange(of: bodyText) { _, _ in
                 isDirty = true
@@ -138,6 +141,8 @@ struct ScratchpadDetailView: View {
                 Label("Копировать", systemImage: "doc.on.doc")
             }
             .buttonStyle(.borderless)
+            // Phase 10: ⌘⇧C is a less-obvious alternative to the menu bar
+            // Copy. Some users prefer it; harmless to keep both.
 
             Button {
                 Task { await saveNow() }
@@ -150,17 +155,52 @@ struct ScratchpadDetailView: View {
 
             Spacer()
 
+            // Phase 10: Duplicate — clones the note with a new id and a
+            // timestamp suffix in the title. Keyboard shortcut ⌘D. Useful
+            // for templates / recurring dictations.
+            Button {
+                duplicate()
+            } label: {
+                Label("Дублировать", systemImage: "plus.square.on.square")
+            }
+            .buttonStyle(.borderless)
+            .keyboardShortcut("d", modifiers: .command)
+
             Button(role: .destructive) {
                 showDeleteConfirm = true
             } label: {
                 Label("Удалить", systemImage: "trash")
-                    .foregroundStyle(HDColor.error)
+                    .foregroundStyle(theme.error)
             }
             .buttonStyle(.borderless)
+            .keyboardShortcut(.delete, modifiers: .command)
         }
         .padding(.horizontal, HDSpacing.xl.rawValue)
         .padding(.vertical, HDSpacing.md.rawValue)
-        .background(HDColor.canvas)
+        .background(theme.canvas)
+    }
+
+    // MARK: - Duplicate (Phase 10)
+
+    private func duplicate() {
+        let copyMarker = " — копия \(Self.duplicateStamp())"
+        let newBody = bodyText + copyMarker
+        Task {
+            _ = await statsObserver.recordTranscript(
+                text: newBody,
+                language: note.frontmatter.language,
+                model: note.frontmatter.model,
+                engine: note.frontmatter.engine,
+                durationSeconds: 0,
+                audio: nil
+            )
+        }
+    }
+
+    private static func duplicateStamp() -> String {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        return f.string(from: Date())
     }
 
     // MARK: - Auto-save
@@ -202,16 +242,10 @@ struct ScratchpadDetailView: View {
     }
 
     private var enginePillColor: (Color, Color) {
-        // Compare against the display name (capital W/K) that
-        // WhisperKitTranscriber.name and PythonTranscriber.name
-        // actually return. Settings stores the code ("whisperkit"
-        // / "faster-whisper") but the frontmatter persists the
-        // display name, so the UI must match against the same
-        // string the transcriber emits.
         if note.frontmatter.engine == "WhisperKit" {
-            return (HDColor.paleGreen, HDColor.deepGreen)
+            return (theme.surfacePaleGreen, theme.deepGreen)
         }
-        return (HDColor.paleBlue, HDColor.actionBlue)
+        return (theme.surfacePaleBlue, theme.actionBlue)
     }
 
     private var enginePillName: String {

@@ -35,6 +35,7 @@
 
 import Foundation
 @preconcurrency import AVFoundation
+import CoreVideo
 import Combine
 
 @MainActor
@@ -72,7 +73,7 @@ final class AudioRecorder: NSObject, ObservableObject {
         qos: .userInitiated
     )
 
-    // MARK: - Published
+    // MARK: Published
 
     @Published private(set) var currentLevel: Float = 0
     private(set) var lastRecordingURL: URL?
@@ -84,6 +85,18 @@ final class AudioRecorder: NSObject, ObservableObject {
     nonisolated(unsafe) private var latestRms: Float = 0
 
     nonisolated(unsafe) private var levelTimer: Timer?
+
+    // MARK: Live streaming support (Phase 8)
+    //
+    // While recording, every tap also appends to `liveSamples` so the
+    // LiveTranscriber can take a rolling snapshot and run a partial
+    // decode. We trim the buffer to `liveBufferMaxSeconds` worth of
+    // samples — anything older is dropped because the most recent N
+    // seconds is what matters for a "live partial" view.
+    nonisolated(unsafe) private var liveSamples: [Float] = []
+    nonisolated let liveBufferMaxSeconds: TimeInterval = 30.0
+    nonisolated let liveSamplesLock = NSLock()
+    nonisolated(unsafe) private var liveSampleRate: Double = 48000
 
     // MARK: - Storage
 
@@ -314,6 +327,20 @@ final class AudioRecorder: NSObject, ObservableObject {
             }
         }
 
+        // Phase 8: also feed the live rolling buffer used by
+        // LiveTranscriber for partial decoding. Same trimming rule —
+        // we keep the last `liveBufferMaxSeconds` of audio at the
+        // input sample rate. The transcriber reads `takeLiveSnapshot`
+        // off the lock to avoid blocking the audio tap.
+        liveSamplesLock.withLock {
+            liveSamples.append(contentsOf: newSamples)
+            let maxSamples = Int(liveBufferMaxSeconds * sampleRate)
+            if liveSamples.count > maxSamples {
+                liveSamples.removeFirst(liveSamples.count - maxSamples)
+            }
+            liveSampleRate = sampleRate
+        }
+
         // If recording, hand off to the file queue.
         let isRec = recordingLock.withLock { isRecordingFlag }
         if isRec {
@@ -410,15 +437,68 @@ final class AudioRecorder: NSObject, ObservableObject {
 
     // MARK: - Live level (waveform)
 
+    /// CVDisplayLink fires once per display refresh (60-120Hz on
+    /// ProMotion Macs). Previous implementation used a 30Hz Timer +
+    /// `Task { @MainActor in … }` per tick, which allocated ~30 Tasks/sec
+    /// on a 60Hz display. CVDisplayLink's callback runs on a dedicated
+    /// high-priority thread; we just sample `latestRms` and hop to the
+    /// main actor for the @Published mutation.
+    ///
+    /// Why not CADisplayLink? It's iOS-only; the macOS equivalent is
+    /// CVDisplayLink from CoreVideo, which is what we use here.
+    private var displayLink: CVDisplayLink?
+
     private func startLevelTimer() {
+        stopLevelTimer()
+
+        var link: CVDisplayLink?
+        let result = CVDisplayLinkCreateWithActiveCGDisplays(&link)
+        guard result == kCVReturnSuccess, let link else {
+            NSLog("MyWhi.AudioRecorder: CVDisplayLink create failed (\(result)); falling back to Timer")
+            startLevelTimerFallback()
+            return
+        }
+
+        let callback: CVDisplayLinkOutputCallback = { (_, _, _, _, _, contextPtr) -> CVReturn in
+            guard let contextPtr else { return kCVReturnSuccess }
+            let recorder = Unmanaged<AudioRecorder>.fromOpaque(contextPtr).takeUnretainedValue()
+            // Snapshot RMS off the lock; hop to main actor for SwiftUI.
+            let raw = recorder.levelLock.withLock { recorder.latestRms }
+            let curved = pow(Double(raw), 0.7)
+            let level = Float(curved)
+            DispatchQueue.main.async {
+                recorder.currentLevel = level
+            }
+            return kCVReturnSuccess
+        }
+
+        let opaqueSelf = Unmanaged.passUnretained(self).toOpaque()
+        CVDisplayLinkSetOutputCallback(link, callback, opaqueSelf)
+
+        CVDisplayLinkStart(link)
+        displayLink = link
+        NSLog("MyWhi.AudioRecorder: CVDisplayLink started")
+    }
+
+    private func stopLevelTimer() {
+        if let link = displayLink {
+            CVDisplayLinkStop(link)
+            displayLink = nil
+        }
+        levelTimer?.invalidate()
+        levelTimer = nil
+    }
+
+    /// Last-resort fallback if CVDisplayLink can't be created (rare;
+    /// happens on macOS sandbox without screen-recording permission in
+    /// some configurations). Matches the previous behavior so the app
+    /// still works — just with slightly higher CPU on the level loop.
+    private func startLevelTimerFallback() {
         levelTimer?.invalidate()
         let timer = Timer(timeInterval: 0.033, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 let raw = self.levelLock.withLock { self.latestRms }
-                // Map [0, 1] raw RMS to the display curve used by
-                // HDWaveformView: keep the floor at 0.05 so the
-                // wave is visibly alive even during quiet speech.
                 let curved = pow(Double(raw), 0.7)
                 self.currentLevel = Float(curved)
             }
@@ -427,9 +507,11 @@ final class AudioRecorder: NSObject, ObservableObject {
         levelTimer = timer
     }
 
-    private func stopLevelTimer() {
+    deinit {
+        if let link = displayLink {
+            CVDisplayLinkStop(link)
+        }
         levelTimer?.invalidate()
-        levelTimer = nil
     }
 
     // MARK: - Cleanup
@@ -464,6 +546,27 @@ final class AudioRecorder: NSObject, ObservableObject {
         let ts = Int(started.timeIntervalSince1970)
         let candidate = Self.recordingsDir.appendingPathComponent("recording-\(ts).wav")
         return FileManager.default.fileExists(atPath: candidate.path) ? candidate : lastRecordingURL
+    }
+
+    // MARK: - Live streaming snapshot API (Phase 8)
+    //
+    // LiveTranscriber calls these from a background task to read the
+    // rolling audio buffer without blocking the audio tap. We snapshot
+    // the array under the lock and return a copy.
+
+    /// Snapshot the rolling audio buffer at the input sample rate.
+    /// Returns `(samples, sampleRate)`. Empty if no recording is
+    /// active.
+    func takeLiveSnapshot() -> (samples: [Float], sampleRate: Double) {
+        let (s, r) = liveSamplesLock.withLock { (liveSamples, liveSampleRate) }
+        return (s, r)
+    }
+
+    /// Reset the rolling live buffer. Called when recording stops.
+    func resetLiveBuffer() {
+        liveSamplesLock.withLock {
+            liveSamples.removeAll(keepingCapacity: false)
+        }
     }
 }
 

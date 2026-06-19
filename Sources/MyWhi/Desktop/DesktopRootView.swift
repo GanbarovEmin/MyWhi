@@ -6,6 +6,8 @@
 // Listens for .mywhiOpenDesktop notifications to handle the "Open MyWhi"
 // menu bar item: switches the activation policy, then opens the
 // window via @Environment(\.openWindow).
+//
+// Phase 7: migrated to HDTheme. Hover state on sidebar items.
 
 import SwiftUI
 
@@ -41,6 +43,7 @@ struct DesktopRootView: View {
     @EnvironmentObject private var container: AppContainer
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var statsObserver: StatsObserver
+    @Environment(\.hdTheme) private var theme
 
     @Environment(\.openWindow) private var openWindow
 
@@ -53,7 +56,7 @@ struct DesktopRootView: View {
         } detail: {
             detail
         }
-        .background(HDColor.canvas)
+        .background(theme.canvas)
         .onReceive(NotificationCenter.default.publisher(for: .mywhiOpenDesktop)) { _ in
             openDesktopFromMenuBar()
         }
@@ -73,11 +76,11 @@ struct DesktopRootView: View {
             // Header / logo
             VStack(alignment: .leading, spacing: HDSpacing.xs.rawValue) {
                 Text("MyWhi")
-                    .font(.system(size: 18, weight: .semibold, design: .default))
-                    .foregroundStyle(HDColor.ink)
+                    .font(HDFont.brandTitle)
+                    .foregroundStyle(theme.ink)
                 Text("v2.0")
                     .font(HDFont.micro)
-                    .foregroundStyle(HDColor.muted)
+                    .foregroundStyle(theme.muted)
             }
             .padding(.horizontal, HDSpacing.lg.rawValue)
             .padding(.top, HDSpacing.xl.rawValue)
@@ -112,11 +115,11 @@ struct DesktopRootView: View {
             VStack(alignment: .leading, spacing: HDSpacing.xs.rawValue) {
                 HStack(spacing: HDSpacing.xs.rawValue) {
                     Image(systemName: "bolt.fill")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(HDColor.muted)
+                        .font(HDFont.engineIcon)
+                        .foregroundStyle(theme.muted)
                     Text("\(appState.activeEngineName) · \(appState.settings.modelSize)")
                         .font(HDFont.micro)
-                        .foregroundStyle(HDColor.muted)
+                        .foregroundStyle(theme.muted)
                 }
             }
             .padding(.horizontal, HDSpacing.lg.rawValue)
@@ -124,7 +127,7 @@ struct DesktopRootView: View {
             .padding(.top, HDSpacing.sm.rawValue)
         }
         .frame(minWidth: 220, idealWidth: 240, maxWidth: 280)
-        .background(HDColor.canvas)
+        .background(theme.canvas)
     }
 
     private func badge(for section: SidebarSection) -> String? {
@@ -213,19 +216,21 @@ struct ScratchpadSplitView: View {
 }
 
 private struct ScratchpadEmptyDetail: View {
+    @Environment(\.hdTheme) private var theme
+
     var body: some View {
         VStack(spacing: HDSpacing.lg.rawValue) {
             Image(systemName: "doc.text")
-                .font(.system(size: 56, weight: .ultraLight))
-                .foregroundStyle(HDColor.muted)
+                .font(HDFont.emptyHero)
+                .foregroundStyle(theme.muted)
             Text("Выбери транскрибацию слева")
                 .font(HDFont.featureHeading)
-                .foregroundStyle(HDColor.muted)
+                .foregroundStyle(theme.muted)
             Text("или запиши новую во вкладке «Запись».")
                 .font(HDFont.caption)
-                .foregroundStyle(HDColor.muted)
+                .foregroundStyle(theme.muted)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(HDColor.canvas)
+        .background(theme.canvas)
     }
 }

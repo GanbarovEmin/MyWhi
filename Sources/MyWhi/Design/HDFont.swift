@@ -8,6 +8,13 @@
 //
 // Use these helpers instead of raw `.font(.system(size: ...))` calls.
 //
+// Phase 7 additions: every UI-facing font size is now a token here. The
+// previous scale only covered a handful of sizes (10/12/14/16/18/24/32/…)
+// and views were reaching for raw `.system(size: X, weight: Y)` for all
+// the in-between sizes. New tokens cover the full UI surface and include
+// semantic names (`actionLabel`, `noteTitle`, `hotkeyTitle`, …) so the
+// design intent survives a font swap.
+//
 // Reference: DESIGN-cohere (1).md "Typography" section.
 
 import SwiftUI
@@ -38,6 +45,57 @@ enum HDFont {
 
     // MARK: UI / Body (Unica77 fallback → SF Pro Text)
 
+    /// 18pt semibold — for the MyWhi brand title in desktop sidebar.
+    static let brandTitle = Font.system(size: 18, weight: .semibold, design: .default)
+
+    /// 10pt medium — for the engine indicator footer icon.
+    static let engineIcon = Font.system(size: 10, weight: .medium, design: .default)
+
+    /// 56pt ultralight — for empty state hero icons.
+    static let emptyHero = Font.system(size: 56, weight: .ultraLight, design: .default)
+
+    /// 44pt ultralight — for inline empty state icons.
+    static let emptyInline = Font.system(size: 44, weight: .ultraLight, design: .default)
+
+    /// 14pt semibold — for the HUD title (e.g. "Слушаю").
+    static let hudTitle = Font.system(size: 14, weight: .semibold, design: .default)
+
+    /// 18pt semibold — for the HUD status glyph icon.
+    static let hudGlyph = Font.system(size: 18, weight: .semibold, design: .default)
+
+    /// 11pt semibold — for the HUD close (xmark) button.
+    static let hudIconClose = Font.system(size: 11, weight: .semibold, design: .default)
+
+    /// 12pt semibold — for the HUD stop (stop.fill) button.
+    static let hudIconStop = Font.system(size: 12, weight: .semibold, design: .default)
+
+    /// 13pt regular — for the HUD live partial transcript (Phase 8).
+    static let hudLiveText = Font.system(size: 13, weight: .regular, design: .default)
+
+    /// 12pt medium — for filter chip buttons (Phase 10).
+    static let filterChip = Font.system(size: 12, weight: .medium, design: .default)
+
+    /// 13pt regular — for form row labels in Settings.
+    static let bodySmall = Font.system(size: 13, weight: .regular, design: .default)
+
+    /// 13pt medium/regular — for Scratchpad row titles (weight toggled via .fontWeight).
+    static let scratchpadTitle = Font.system(size: 13, weight: .regular, design: .default)
+
+    /// 11pt regular — for Scratchpad row metadata.
+    static let scratchpadMeta = Font.system(size: 11, weight: .regular, design: .default)
+
+    /// 18pt regular — for the wave icon in OnboardingCard.
+    static let waveIcon = Font.system(size: 18, weight: .regular, design: .default)
+
+    /// 16pt regular — for sidebar row icons.
+    static let sidebarIcon = Font.system(size: 16, weight: .regular, design: .default)
+
+    /// 11pt medium — for stat-tile delta arrow icon.
+    static let statDeltaIcon = Font.system(size: 11, weight: .medium, design: .default)
+
+    /// 13pt regular — for stat-tile delta text.
+    static let statDelta = Font.system(size: 13, weight: .regular, design: .default)
+
     /// Body large, 18px / weight 400 / line-height 1.40.
     static let bodyLarge = Font.system(size: 18, weight: .regular, design: .default)
 
@@ -62,6 +120,70 @@ enum HDFont {
     static func monoLabel(size: CGFloat, weight: Font.Weight = .regular) -> Font {
         .system(size: size, weight: weight, design: .monospaced)
     }
+
+    // MARK: Semantic UI tokens (Phase 7)
+    //
+    // These tokens name a specific role in the UI so future design tweaks
+    // (e.g. "all hotkey subtitles go from 10 to 11 px") happen in one
+    // place. Call sites read `.font(HDFont.noteTitle)` instead of
+    // `.font(.system(size: 12, weight: .regular))`.
+
+    /// 22pt semibold — for status glyph in popover header.
+    static let titleGlyph = Font.system(size: 22, weight: .semibold, design: .default)
+
+    /// 13pt medium — for the primary action label next to the record button.
+    static let actionLabel = Font.system(size: 13, weight: .medium, design: .default)
+
+    /// 12pt medium — for the "Отменить" / discard link button.
+    static let discardLabel = Font.system(size: 12, weight: .medium, design: .default)
+
+    /// 13pt regular — for last-transcript preview body.
+    static let cardBody = Font.system(size: 13, weight: .regular, design: .default)
+
+    /// 12pt regular — for note titles in recent lists.
+    static let noteTitle = Font.system(size: 12, weight: .regular, design: .default)
+
+    /// 10pt regular — for note metadata (time, word count).
+    static let noteMeta = Font.system(size: 10, weight: .regular, design: .default)
+
+    /// 11pt medium — for hotkey hint title.
+    static let hotkeyTitle = Font.system(size: 11, weight: .medium, design: .default)
+
+    /// 10pt regular — for hotkey hint subtitle.
+    static let hotkeySub = Font.system(size: 10, weight: .regular, design: .default)
+
+    /// 14pt medium — for SF Symbols used as button icons.
+    static let iconSmall = Font.system(size: 14, weight: .medium, design: .default)
+
+    /// 12pt regular — for SF Symbols used as list icons / tiny badges.
+    static let iconTiny = Font.system(size: 12, weight: .regular, design: .default)
+
+    /// 11pt medium — for sidebar labels / nav items (legacy).
+    static let navLabel = Font.system(size: 11, weight: .medium, design: .default)
+
+    /// 18pt semibold — for hero stat values.
+    static let statValue = Font.system(size: 18, weight: .semibold, design: .default)
+
+    /// 13pt medium — for stat labels / form labels.
+    static let formLabel = Font.system(size: 13, weight: .medium, design: .default)
+
+    /// 16pt medium — for status headline in Home view.
+    static let statusHeadline = Font.system(size: 16, weight: .medium, design: .default)
+
+    /// 14pt regular — for empty state headlines.
+    static let emptyHeadline = Font.system(size: 14, weight: .regular, design: .default)
+
+    /// 14pt monospaced — for the Scratchpad editor body.
+    static let editorBody = Font.system(size: 14, weight: .regular, design: .monospaced)
+
+    /// 10pt medium — for small badges / engine pills.
+    static let badge = Font.system(size: 10, weight: .medium, design: .default)
+
+    /// 11pt medium — for inline code labels in toolbar.
+    static let toolbarLabel = Font.system(size: 11, weight: .medium, design: .default)
+
+    /// 18pt regular — for Settings card headings.
+    static let settingsCardTitle = Font.system(size: 18, weight: .regular, design: .default)
 }
 
 // MARK: - Tracking helpers

@@ -1,14 +1,19 @@
 // SettingsViewDesktop.swift
 // Settings pane inside the desktop sidebar. Covers engine, model,
 // language, behavior toggles, storage info, and Obsidian integration.
+//
+// Phase 7: HDTheme migration, hardcoded fonts → HDFont tokens.
+//   Performance: removed redundant MainActor.run hop in refreshStorage().
 
 import SwiftUI
 import AppKit
 import Carbon.HIToolbox
+
 struct SettingsViewDesktop: View {
 
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var statsObserver: StatsObserver
+    @Environment(\.hdTheme) private var theme
 
     @State private var vaultSize: Int64 = 0
     @State private var obsidianStatus: ObsidianStatus = .unknown
@@ -32,7 +37,7 @@ struct SettingsViewDesktop: View {
             .padding(HDSpacing.xxl.rawValue)
             .frame(maxWidth: 720)
         }
-        .background(HDColor.canvas)
+        .background(theme.canvas)
         .task {
             await refreshStorage()
             obsidianStatus = detectObsidian()
@@ -46,11 +51,11 @@ struct SettingsViewDesktop: View {
             Text("НАСТРОЙКИ")
                 .font(HDFont.monoLabel(size: 12))
                 .hdTracking(0.5)
-                .foregroundStyle(HDColor.muted)
+                .foregroundStyle(theme.muted)
             Text("Как MyWhi работает")
                 .font(HDFont.cardHeading)
                 .hdTracking(-0.32)
-                .foregroundStyle(HDColor.ink)
+                .foregroundStyle(theme.ink)
         }
     }
 
@@ -61,23 +66,19 @@ struct SettingsViewDesktop: View {
             VStack(alignment: .leading, spacing: HDSpacing.lg.rawValue) {
                 sectionTitle("Модель")
 
-                // v2.0: WhisperKit is the only engine. No picker —
-                // we just show the model selection. The "WhisperKit"
-                // badge below the picker makes the engine choice
-                // visible without taking screen real estate.
                 HStack {
                     Text("Движок")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(HDColor.ink)
+                        .font(HDFont.formLabel)
+                        .foregroundStyle(theme.ink)
                     Spacer()
                     Text("WhisperKit")
                         .font(HDFont.monoLabel(size: 12, weight: .medium))
                         .padding(.horizontal, HDSpacing.sm.rawValue)
                         .padding(.vertical, 2)
                         .background(
-                            Capsule().fill(HDColor.paleGreen)
+                            Capsule().fill(theme.surfacePaleGreen)
                         )
-                        .foregroundStyle(HDColor.deepGreen)
+                        .foregroundStyle(theme.deepGreen)
                 }
 
                 Picker("Model", selection: modelBinding) {
@@ -91,13 +92,10 @@ struct SettingsViewDesktop: View {
                     Task { await appState.reloadEngine() }
                 }
 
-                // Model description below the picker — .menu style
-                // only shows one line per item, so the description
-                // lives in a small caption underneath.
                 if let entry = AppSettings.availableModels.first(where: { $0.code == appState.settings.modelSize }) {
                     Text(entry.description)
                         .font(HDFont.micro)
-                        .foregroundStyle(HDColor.muted)
+                        .foregroundStyle(theme.muted)
                 }
 
                 Picker("Language", selection: languageBinding) {
@@ -113,15 +111,13 @@ struct SettingsViewDesktop: View {
                             .controlSize(.small)
                         Text("Загружается \(appState.settings.modelSize)…")
                             .font(HDFont.caption)
-                            .foregroundStyle(HDColor.muted)
+                            .foregroundStyle(theme.muted)
                     }
                     .padding(.vertical, HDSpacing.xs.rawValue)
                 }
             }
         }
     }
-
-    // v2.0: no engineBinding — WhisperKit is the only engine.
 
     private var modelBinding: Binding<String> {
         Binding(
@@ -152,18 +148,14 @@ struct SettingsViewDesktop: View {
                 Divider()
                     .padding(.vertical, HDSpacing.xs.rawValue)
 
-                // Hotkey display + change button (Phase 6.3 — runtime
-                // customization of the global hotkey. The chord
-                // itself is stored in AppSettings and survives
-                // restarts.)
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Глобальный hotkey")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(HDColor.ink)
+                            .font(HDFont.formLabel)
+                            .foregroundStyle(theme.ink)
                         Text("Работает из любого приложения")
                             .font(HDFont.caption)
-                            .foregroundStyle(HDColor.muted)
+                            .foregroundStyle(theme.muted)
                     }
                     Spacer()
                     Text(hotkeyDisplay)
@@ -172,9 +164,9 @@ struct SettingsViewDesktop: View {
                         .padding(.vertical, HDSpacing.xs.rawValue)
                         .background(
                             RoundedRectangle(cornerRadius: HDRadius.xs.rawValue, style: .continuous)
-                                .fill(HDColor.softStone)
+                                .fill(theme.surfaceStone)
                         )
-                        .foregroundStyle(HDColor.ink)
+                        .foregroundStyle(theme.ink)
                     Button("Изменить…") {
                         showingHotkeySheet = true
                     }
@@ -201,16 +193,16 @@ struct SettingsViewDesktop: View {
                     HStack(spacing: HDSpacing.sm.rawValue) {
                         if AutoPasteService.isAccessibilityGranted() {
                             Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(HDColor.deepGreen)
+                                .foregroundStyle(theme.deepGreen)
                             Text("Accessibility permission выдана")
                                 .font(HDFont.caption)
-                                .foregroundStyle(HDColor.muted)
+                                .foregroundStyle(theme.muted)
                         } else {
                             Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundStyle(HDColor.coral)
+                                .foregroundStyle(theme.coral)
                             Text("Нужно разрешение Accessibility в Системных настройках")
                                 .font(HDFont.caption)
-                                .foregroundStyle(HDColor.coral)
+                                .foregroundStyle(theme.coral)
                         }
                         Spacer()
                         HDButtonSecondary(title: "Открыть настройки") {
@@ -223,12 +215,32 @@ struct SettingsViewDesktop: View {
 
                 Toggle("Тёмная тема (override system)", isOn: darkModeBinding)
                     .help("Принудительно включить тёмную тему независимо от системных настроек macOS")
+
+                // Phase 8 / 9 — surface the new toggles in Settings so
+                // users can opt out of features that aren't for them.
+                Divider()
+
+                Toggle("Показывать текст во время записи (live streaming)", isOn: liveStreamingBinding)
+                    .help("Слова появляются по мере того, как ты говоришь. Требует больше CPU.")
+
+                Toggle("Звуковой сигнал старт/стоп", isOn: soundFeedbackBinding)
+                    .help("Мягкий chime при начале и конце записи.")
             }
         }
     }
 
     private var darkModeBinding: Binding<Bool> {
         Binding(get: { appState.settings.useDarkMode }, set: { appState.settings.useDarkMode = $0 })
+    }
+
+    private var liveStreamingBinding: Binding<Bool> {
+        Binding(get: { appState.settings.liveStreamingEnabled },
+                set: { appState.settings.liveStreamingEnabled = $0 })
+    }
+
+    private var soundFeedbackBinding: Binding<Bool> {
+        Binding(get: { appState.settings.soundFeedbackEnabled },
+                set: { appState.settings.soundFeedbackEnabled = $0 })
     }
 
     private var hotkeyDisplay: String {
@@ -319,13 +331,13 @@ struct SettingsViewDesktop: View {
             VStack(alignment: .leading, spacing: HDSpacing.sm.rawValue) {
                 Text("MyWhi")
                     .font(HDFont.featureHeading)
-                    .foregroundStyle(HDColor.ink)
+                    .foregroundStyle(theme.ink)
                 Text("v2.0.0-alpha · Native macOS dictation powered by WhisperKit")
                     .font(HDFont.caption)
-                    .foregroundStyle(HDColor.muted)
+                    .foregroundStyle(theme.muted)
                 Text("100% local. Audio stays on your Mac.")
                     .font(HDFont.micro)
-                    .foregroundStyle(HDColor.muted)
+                    .foregroundStyle(theme.muted)
             }
         }
     }
@@ -336,26 +348,28 @@ struct SettingsViewDesktop: View {
         Text(text.uppercased())
             .font(HDFont.monoLabel(size: 11))
             .hdTracking(0.5)
-            .foregroundStyle(HDColor.muted)
+            .foregroundStyle(theme.muted)
     }
 
     private func row(_ label: String, value: String, mono: Bool = false) -> some View {
         HStack(alignment: .top) {
             Text(label)
-                .font(.system(size: 13))
-                .foregroundStyle(HDColor.muted)
+                .font(HDFont.bodySmall)
+                .foregroundStyle(theme.muted)
                 .frame(width: 130, alignment: .leading)
             Text(value)
-                .font(mono ? HDFont.monoLabel(size: 11) : .system(size: 13))
-                .foregroundStyle(HDColor.ink)
+                .font(mono ? HDFont.monoLabel(size: 11) : HDFont.bodySmall)
+                .foregroundStyle(theme.ink)
                 .textSelection(.enabled)
             Spacer()
         }
     }
 
     private func refreshStorage() async {
+        // `vaultSizeOnDisk` is already async on the actor; assign
+        // directly without a redundant MainActor.run hop.
         let bytes = (try? await appState.vaultStore.sizeOnDisk()) ?? 0
-        await MainActor.run { self.vaultSize = bytes }
+        vaultSize = bytes
     }
 
     private func formatBytes(_ bytes: Int64) -> String {
@@ -366,7 +380,6 @@ struct SettingsViewDesktop: View {
     }
 
     private func detectObsidian() -> ObsidianStatus {
-        // Check standard /Applications/Obsidian.app
         let candidates = [
             URL(fileURLWithPath: "/Applications/Obsidian.app"),
             URL(fileURLWithPath: "/Applications/Obsidian Helper.app"),
@@ -374,7 +387,6 @@ struct SettingsViewDesktop: View {
         for url in candidates where FileManager.default.fileExists(atPath: url.path) {
             return .installed(url)
         }
-        // mdfind fallback
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/mdfind")
         task.arguments = ["kMDItemCFBundleIdentifier == \"md.obsidian\""]

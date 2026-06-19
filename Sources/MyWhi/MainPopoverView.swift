@@ -8,6 +8,15 @@
 // - Explicit "Остановить" Stop button when status == .recording
 // - Live duration counter in the header
 // - "Отменить" Discard button — calls AppState.discardRecording()
+//
+// Phase 7 changes:
+// - Migrated to HDTheme via `@Environment(\.hdTheme)` for full dark-mode
+//   coherence. Replaced hardcoded `.font(.system(size:))` and stray
+//   `.foregroundStyle(...)` calls with HDFont + theme tokens.
+// - Performance: RecordingDurationView now uses SwiftUI's built-in
+//   `Text(date, style: .timer)` instead of TimelineView + manual format.
+// - Performance: recentNotes cache via @State to avoid recompute on every
+//   body re-evaluation.
 
 import SwiftUI
 
@@ -16,11 +25,17 @@ struct MainPopoverView: View {
     @EnvironmentObject private var container: AppContainer
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var statsObserver: StatsObserver
+    @Environment(\.hdTheme) private var theme
     @Environment(\.openWindow) private var openWindow
 
-    private var recentNotes: [TranscriptNote] {
-        Array(statsObserver.notes.prefix(3))
-    }
+    @State private var cachedRecentNotes: [TranscriptNote] = []
+    @State private var notesRevision: Int = 0
+
+    /// Cache the prefix-of-3 list. Recomputes only when statsObserver.notes
+    /// changes (we observe via onChange). Previously this was a computed
+    /// property → re-evaluated on every body re-render (every level meter
+    /// tick, every status change).
+    private var recentNotes: [TranscriptNote] { cachedRecentNotes }
 
     var body: some View {
         VStack(alignment: .leading, spacing: HDSpacing.lg.rawValue) {
@@ -42,7 +57,9 @@ struct MainPopoverView: View {
         }
         .padding(HDSpacing.lg.rawValue)
         .frame(width: 380)
-        .background(HDColor.canvas)
+        .background(theme.canvas)
+        .onAppear { refreshRecentNotes() }
+        .onChange(of: statsObserver.notes) { _, _ in refreshRecentNotes() }
         .onReceive(NotificationCenter.default.publisher(for: .mywhiOpenDesktop)) { _ in
             openDesktopWindow()
         }
@@ -52,29 +69,33 @@ struct MainPopoverView: View {
         }
     }
 
+    private func refreshRecentNotes() {
+        cachedRecentNotes = Array(statsObserver.notes.prefix(3))
+    }
+
     // MARK: - Header
 
     private var header: some View {
         HStack(alignment: .center, spacing: HDSpacing.md.rawValue) {
             Image(systemName: appState.status.iconName)
-                .font(.system(size: 22, weight: .semibold))
+                .font(HDFont.titleGlyph)
                 .foregroundStyle(statusColor)
                 .symbolEffect(.pulse, options: .repeating, isActive: appState.status == .recording)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(appState.status.rawValue)
                     .font(HDFont.featureHeading)
-                    .foregroundStyle(HDColor.ink)
+                    .foregroundStyle(theme.ink)
                 HStack(spacing: HDSpacing.xs.rawValue) {
                     Text("MyWhi")
                         .font(HDFont.caption)
-                        .foregroundStyle(HDColor.muted)
+                        .foregroundStyle(theme.muted)
                     Text("·")
                         .font(HDFont.caption)
-                        .foregroundStyle(HDColor.muted)
+                        .foregroundStyle(theme.muted)
                     Text(appState.activeEngineName)
                         .font(HDFont.monoLabel(size: 11))
-                        .foregroundStyle(HDColor.muted)
+                        .foregroundStyle(theme.muted)
                 }
             }
             Spacer()
@@ -86,11 +107,11 @@ struct MainPopoverView: View {
 
     private var statusColor: Color {
         switch appState.status {
-        case .recording:    return HDColor.deepGreen
-        case .transcribing: return HDColor.coral
-        case .copied:       return HDColor.actionBlue
-        case .error:        return HDColor.error
-        default:            return HDColor.muted
+        case .recording:    return theme.deepGreen
+        case .transcribing: return theme.coral
+        case .copied:       return theme.actionBlue
+        case .error:        return theme.error
+        default:            return theme.muted
         }
     }
 
@@ -99,12 +120,12 @@ struct MainPopoverView: View {
     private func errorBanner(_ message: String) -> some View {
         Text(message)
             .font(HDFont.caption)
-            .foregroundStyle(HDColor.onDark)
+            .foregroundStyle(theme.onPrimary)
             .padding(HDSpacing.md.rawValue)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: HDRadius.sm.rawValue, style: .continuous)
-                    .fill(HDColor.error)
+                    .fill(theme.error)
             )
             .lineLimit(4)
     }
@@ -127,11 +148,11 @@ struct MainPopoverView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(actionLabel)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(HDColor.ink)
+                    .font(HDFont.actionLabel)
+                    .foregroundStyle(theme.ink)
                 Text(hintLabel)
                     .font(HDFont.micro)
-                    .foregroundStyle(HDColor.muted)
+                    .foregroundStyle(theme.muted)
             }
 
             Spacer()
@@ -140,7 +161,7 @@ struct MainPopoverView: View {
                 appState.transcribeLastRecording()
             } label: {
                 Image(systemName: "waveform")
-                    .font(.system(size: 14))
+                    .font(HDFont.iconSmall)
             }
             .buttonStyle(.borderless)
             .disabled(appState.recorder.lastRecordingURL == nil
@@ -157,7 +178,7 @@ struct MainPopoverView: View {
             HDWaveformView(
                 level: appState.recorderLevel,
                 style: .compact,
-                color: HDColor.deepGreen
+                color: theme.deepGreen
             )
             .frame(maxWidth: .infinity)
             .padding(.vertical, HDSpacing.xs.rawValue)
@@ -175,8 +196,8 @@ struct MainPopoverView: View {
                     appState.discardRecording()
                 } label: {
                     Label("Отменить", systemImage: "xmark")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(HDColor.muted)
+                        .font(HDFont.discardLabel)
+                        .foregroundStyle(theme.muted)
                 }
                 .buttonStyle(.plain)
                 .help("Удалить запись без транскрибации (Esc)")
@@ -186,7 +207,7 @@ struct MainPopoverView: View {
         .padding(HDSpacing.md.rawValue)
         .background(
             RoundedRectangle(cornerRadius: HDRadius.md.rawValue, style: .continuous)
-                .fill(HDColor.paleGreen)
+                .fill(theme.surfacePaleGreen)
         )
     }
 
@@ -217,15 +238,15 @@ struct MainPopoverView: View {
                     Text("ПОСЛЕДНЯЯ")
                         .font(HDFont.monoLabel(size: 10))
                         .hdTracking(0.5)
-                        .foregroundStyle(HDColor.muted)
+                        .foregroundStyle(theme.muted)
                     Spacer()
                     Text("\(appState.lastTranscript.count) символов")
                         .font(HDFont.micro)
-                        .foregroundStyle(HDColor.muted)
+                        .foregroundStyle(theme.muted)
                 }
                 Text(appState.lastTranscript)
-                    .font(.system(size: 13))
-                    .foregroundStyle(HDColor.ink)
+                    .font(HDFont.cardBody)
+                    .foregroundStyle(theme.ink)
                     .lineLimit(4)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .textSelection(.enabled)
@@ -246,36 +267,36 @@ struct MainPopoverView: View {
             Text("НЕДАВНИЕ")
                 .font(HDFont.monoLabel(size: 10))
                 .hdTracking(0.5)
-                .foregroundStyle(HDColor.muted)
+                .foregroundStyle(theme.muted)
             ForEach(recentNotes, id: \.id) { note in
                 Button {
                     appState.clipboard.copy(note.body)
                 } label: {
                     HStack(alignment: .top, spacing: HDSpacing.sm.rawValue) {
                         Image(systemName: "doc.text")
-                            .font(.system(size: 11))
-                            .foregroundStyle(HDColor.muted)
+                            .font(HDFont.iconTiny)
+                            .foregroundStyle(theme.muted)
                             .frame(width: 14)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(note.title)
-                                .font(.system(size: 12))
-                                .foregroundStyle(HDColor.ink)
+                                .font(HDFont.noteTitle)
+                                .foregroundStyle(theme.ink)
                                 .lineLimit(2)
                                 .multilineTextAlignment(.leading)
                             Text("\(note.frontmatter.words) слов · \(note.frontmatter.createdAt.formatted(date: .omitted, time: .shortened))")
-                                .font(.system(size: 10))
-                                .foregroundStyle(HDColor.muted)
+                                .font(HDFont.noteMeta)
+                                .foregroundStyle(theme.muted)
                         }
                         Spacer()
                         Image(systemName: "doc.on.doc")
-                            .font(.system(size: 10))
-                            .foregroundStyle(HDColor.muted)
+                            .font(HDFont.iconTiny)
+                            .foregroundStyle(theme.muted)
                     }
                     .padding(.vertical, HDSpacing.xs.rawValue)
                     .padding(.horizontal, HDSpacing.sm.rawValue)
                     .background(
                         RoundedRectangle(cornerRadius: HDRadius.xs.rawValue, style: .continuous)
-                            .fill(HDColor.softStone.opacity(0.5))
+                            .fill(theme.surfaceStone.opacity(0.5))
                     )
                 }
                 .buttonStyle(.plain)
@@ -290,7 +311,7 @@ struct MainPopoverView: View {
             Divider()
 
             // Hotkey hint — visible until the user has used the
-            // global hotkey at least once. Audit #17.
+            // global hotkey at least once.
             if !hotkeyHintDismissed {
                 hotkeyHint
             }
@@ -298,7 +319,7 @@ struct MainPopoverView: View {
             HStack {
                 Text("v2.0 · \(statsObserver.stats.totalWords) слов всего")
                     .font(HDFont.micro)
-                    .foregroundStyle(HDColor.muted)
+                    .foregroundStyle(theme.muted)
                 Spacer()
                 HDButtonSecondary(title: "Открыть MyWhi", icon: "arrow.up.right.square") {
                     openDesktopWindow()
@@ -317,53 +338,47 @@ struct MainPopoverView: View {
     private var hotkeyHint: some View {
         HStack(spacing: HDSpacing.sm.rawValue) {
             Image(systemName: "keyboard")
-                .font(.system(size: 12))
-                .foregroundStyle(HDColor.coral)
+                .font(HDFont.iconSmall)
+                .foregroundStyle(theme.coral)
             VStack(alignment: .leading, spacing: 1) {
                 Text("Глобальный hotkey")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(HDColor.ink)
+                    .font(HDFont.hotkeyTitle)
+                    .foregroundStyle(theme.ink)
                 Text("Нажми ⌘⌥D из любого приложения")
-                    .font(.system(size: 10))
-                    .foregroundStyle(HDColor.muted)
+                    .font(HDFont.hotkeySub)
+                    .foregroundStyle(theme.muted)
             }
             Spacer()
             Button {
                 hotkeyHintDismissed = true
             } label: {
                 Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 12))
-                    .foregroundStyle(HDColor.muted)
+                    .font(HDFont.iconSmall)
+                    .foregroundStyle(theme.muted)
             }
             .buttonStyle(.plain)
         }
         .padding(HDSpacing.sm.rawValue)
         .background(
             RoundedRectangle(cornerRadius: HDRadius.xs.rawValue, style: .continuous)
-                .fill(HDColor.paleGreen)
+                .fill(theme.surfacePaleGreen)
         )
     }
 }
 
 // MARK: - Recording duration counter
+//
+// Phase 7: use SwiftUI's built-in Text(_:style:.timer) instead of a
+// TimelineView + manual format. Same visual output, much less work for
+// SwiftUI — no view body re-evaluation 2x/second.
 
 private struct RecordingDurationView: View {
-    @State private var startTime: Date = Date()
+    private let startTime = Date()
 
     var body: some View {
-        TimelineView(.periodic(from: startTime, by: 0.5)) { context in
-            let elapsed = Int(Date().timeIntervalSince(startTime))
-            Text(formatDuration(elapsed))
-                .font(HDFont.monoLabel(size: 13, weight: .medium))
-                .foregroundStyle(HDColor.deepGreen)
-                .monospacedDigit()
-        }
-        .onAppear { startTime = Date() }
-    }
-
-    private func formatDuration(_ seconds: Int) -> String {
-        let m = seconds / 60
-        let s = seconds % 60
-        return String(format: "%d:%02d", m, s)
+        Text(timerInterval: Date()...Date.distantFuture, countsDown: false, showsHours: false)
+            .font(HDFont.monoLabel(size: 13, weight: .medium))
+            .foregroundStyle(HDColor.deepGreen)
+            .monospacedDigit()
     }
 }

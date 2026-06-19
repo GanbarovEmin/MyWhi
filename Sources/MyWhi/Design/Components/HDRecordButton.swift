@@ -6,6 +6,9 @@
 //   .transcribing — filled coral, animated spinner
 //
 // Two sizes: compact (48px, menu bar) and hero (88px, desktop Home view).
+//
+// Phase 7: HDTheme-aware. Colors come from the current theme so dark
+// mode renders correctly. Focus ring for keyboard navigation.
 
 import SwiftUI
 
@@ -16,6 +19,9 @@ enum HDRecordState {
 }
 
 struct HDRecordButton: View {
+    @Environment(\.hdTheme) private var theme
+    @FocusState private var isFocused: Bool
+
     let state: HDRecordState
     var size: CGFloat = 88
     var isEnabled: Bool = true
@@ -33,25 +39,25 @@ struct HDRecordButton: View {
 
     private var fillColor: Color {
         switch state {
-        case .idle:         return HDColor.canvas
-        case .recording:    return HDColor.deepGreen
-        case .transcribing: return HDColor.coral
+        case .idle:         return theme.canvas
+        case .recording:    return theme.deepGreen
+        case .transcribing: return theme.coral
         }
     }
 
     private var iconColor: Color {
         switch state {
-        case .idle:         return HDColor.primary
-        case .recording:    return HDColor.onDark
-        case .transcribing: return HDColor.onPrimary
+        case .idle:         return theme.primary
+        case .recording:    return theme.onDark
+        case .transcribing: return theme.onPrimary
         }
     }
 
     private var borderColor: Color {
         switch state {
-        case .idle:         return HDColor.primary
-        case .recording:    return HDColor.deepGreen
-        case .transcribing: return HDColor.coral
+        case .idle:         return theme.primary
+        case .recording:    return theme.deepGreen
+        case .transcribing: return theme.coral
         }
     }
 
@@ -61,7 +67,7 @@ struct HDRecordButton: View {
                 if state == .recording {
                     // Pulse halo
                     Circle()
-                        .fill(HDColor.deepGreen.opacity(0.18))
+                        .fill(theme.deepGreen.opacity(0.18))
                         .frame(width: size * 1.45, height: size * 1.45)
                         .scaleEffect(pulseScale)
                         .opacity(2.0 - pulseScale)
@@ -74,12 +80,17 @@ struct HDRecordButton: View {
                         Circle()
                             .stroke(borderColor, lineWidth: state == .idle ? 1.5 : 0)
                     )
+                    .overlay(
+                        Circle()
+                            .stroke(isFocused ? theme.focusBlue : Color.clear, lineWidth: 2)
+                            .frame(width: size + 6, height: size + 6)
+                    )
 
                 if state == .transcribing {
                     // Spinner-ish: rotating arc
                     Circle()
                         .trim(from: 0.0, to: 0.7)
-                        .stroke(HDColor.onPrimary, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                        .stroke(theme.onPrimary, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
                         .frame(width: size * 0.45, height: size * 0.45)
                         .rotationEffect(.degrees(pulseScale * 360))
                 } else {
@@ -91,6 +102,7 @@ struct HDRecordButton: View {
         }
         .buttonStyle(.plain)
         .disabled(!isEnabled || state == .transcribing)
+        .focused($isFocused)
         .onChange(of: state) { _, newState in
             if newState == .recording {
                 startPulse()

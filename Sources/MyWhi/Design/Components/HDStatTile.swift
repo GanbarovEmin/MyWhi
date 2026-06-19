@@ -3,6 +3,8 @@
 // Matches the editorial "Cohere product-display" feel — large tight type
 // against either a dark or light surface.
 //
+// Phase 7: HDTheme-aware.
+//
 // Example:
 //   HDStatTile(label: "Total words", value: "12 482", surface: .dark)
 //   HDStatTile(label: "Current streak", value: "7 days", surface: .light)
@@ -15,21 +17,23 @@ enum HDStatSurface {
 }
 
 struct HDStatTile: View {
+    @Environment(\.hdTheme) private var theme
+
     let label: String
     let value: String
     var delta: String? = nil         // e.g. "+12% this week"
     var surface: HDStatSurface = .light
 
     private var labelColor: Color {
-        surface == .dark ? HDColor.onDark.opacity(0.7) : HDColor.muted
+        surface == .dark ? theme.onDark.opacity(0.7) : theme.muted
     }
 
     private var valueColor: Color {
-        surface == .dark ? HDColor.onDark : HDColor.ink
+        surface == .dark ? theme.onDark : theme.ink
     }
 
     private var deltaColor: Color {
-        surface == .dark ? HDColor.coral : HDColor.coral
+        theme.coral
     }
 
     var body: some View {
@@ -47,9 +51,9 @@ struct HDStatTile: View {
             if let delta {
                 HStack(spacing: HDSpacing.xs.rawValue) {
                     Image(systemName: "arrow.up.right")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(HDFont.statDeltaIcon)
                     Text(delta)
-                        .font(.system(size: 13, weight: .regular))
+                        .font(HDFont.statDelta)
                 }
                 .foregroundStyle(deltaColor)
             }

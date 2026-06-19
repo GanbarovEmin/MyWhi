@@ -6,10 +6,13 @@
 // This view exists only during alpha development. It's a living reference
 // for verifying that the SwiftUI implementation matches the Cohere tokens
 // in DESIGN-cohere (1).md.
+//
+// Phase 7: HDTheme-aware. All colors now read from `@Environment(\.hdTheme)`.
 
 import SwiftUI
 
 struct DesignSystemPreviewView: View {
+    @Environment(\.hdTheme) private var theme
     @State private var recordState: HDRecordState = .idle
     @State private var filterSelected: Bool = false
     @State private var coralSelected: Bool = false
@@ -68,7 +71,7 @@ struct DesignSystemPreviewView: View {
             .padding(HDSpacing.xl.rawValue)
         }
         .frame(minWidth: 760, minHeight: 700)
-        .background(HDColor.canvas)
+        .background(theme.canvas)
     }
 
     // MARK: - Header
@@ -80,7 +83,7 @@ struct DesignSystemPreviewView: View {
                 .hdTracking(-0.32)
             Text("Cohere tokens, SwiftUI implementation. v2.0-alpha.")
                 .font(HDFont.caption)
-                .foregroundStyle(HDColor.muted)
+                .foregroundStyle(theme.muted)
         }
     }
 
@@ -89,9 +92,9 @@ struct DesignSystemPreviewView: View {
             Text(title.uppercased())
                 .font(HDFont.monoLabel(size: 12))
                 .hdTracking(0.5)
-                .foregroundStyle(HDColor.muted)
+                .foregroundStyle(theme.muted)
             Rectangle()
-                .fill(HDColor.hairline)
+                .fill(theme.hairline)
                 .frame(height: 1)
         }
     }
@@ -100,26 +103,24 @@ struct DesignSystemPreviewView: View {
 
     private var palette: some View {
         let swatches: [(String, Color)] = [
-            ("primary",       HDColor.primary),
-            ("cohereBlack",   HDColor.cohereBlack),
-            ("ink",           HDColor.ink),
-            ("deepGreen",     HDColor.deepGreen),
-            ("coral",         HDColor.coral),
-            ("coralSoft",     HDColor.coralSoft),
-            ("canvas",        HDColor.canvas),
-            ("softStone",     HDColor.softStone),
-            ("paleGreen",     HDColor.paleGreen),
-            ("paleBlue",      HDColor.paleBlue),
-            ("muted",         HDColor.muted),
-            ("slate",         HDColor.slate),
-            ("bodyMuted",     HDColor.bodyMuted),
-            ("hairline",      HDColor.hairline),
-            ("borderLight",   HDColor.borderLight),
-            ("cardBorder",    HDColor.cardBorder),
-            ("actionBlue",    HDColor.actionBlue),
-            ("focusBlue",     HDColor.focusBlue),
-            ("formFocus",     HDColor.formFocus),
-            ("error",         HDColor.error),
+            ("primary",       theme.primary),
+            ("deepGreen",     theme.deepGreen),
+            ("coral",         theme.coral),
+            ("coralSoft",     theme.coralSoft),
+            ("canvas",        theme.canvas),
+            ("surfaceStone",  theme.surfaceStone),
+            ("surfacePaleGreen", theme.surfacePaleGreen),
+            ("surfacePaleBlue",  theme.surfacePaleBlue),
+            ("muted",         theme.muted),
+            ("bodyMuted",     theme.bodyMuted),
+            ("ink",           theme.ink),
+            ("border",        theme.border),
+            ("borderLight",   theme.borderLight),
+            ("hairline",      theme.hairline),
+            ("cardBorder",    theme.cardBorder),
+            ("actionBlue",    theme.actionBlue),
+            ("focusBlue",     theme.focusBlue),
+            ("error",         theme.error),
         ]
         return LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 5), spacing: 12) {
             ForEach(swatches, id: \.0) { name, color in
@@ -128,12 +129,12 @@ struct DesignSystemPreviewView: View {
                         .fill(color)
                         .overlay(
                             RoundedRectangle(cornerRadius: HDRadius.sm.rawValue)
-                                .stroke(HDColor.borderLight, lineWidth: 1)
+                                .stroke(theme.border, lineWidth: 1)
                         )
                         .frame(height: 56)
                     Text(name)
                         .font(HDFont.monoLabel(size: 11))
-                        .foregroundStyle(HDColor.bodyMuted)
+                        .foregroundStyle(theme.bodyMuted)
                 }
             }
         }
@@ -213,7 +214,7 @@ struct DesignSystemPreviewView: View {
             HDRecordButton(state: state) {}
             Text(label)
                 .font(HDFont.caption)
-                .foregroundStyle(HDColor.muted)
+                .foregroundStyle(theme.muted)
         }
     }
 
@@ -228,7 +229,7 @@ struct DesignSystemPreviewView: View {
                             .font(HDFont.featureHeading)
                         Text("White surface, 1px border-light.")
                             .font(HDFont.caption)
-                            .foregroundStyle(HDColor.muted)
+                            .foregroundStyle(theme.muted)
                     }
                 }
                 .frame(width: 240)
@@ -239,7 +240,7 @@ struct DesignSystemPreviewView: View {
                             .font(HDFont.featureHeading)
                         Text("Soft-stone warm neutral.")
                             .font(HDFont.caption)
-                            .foregroundStyle(HDColor.muted)
+                            .foregroundStyle(theme.muted)
                     }
                 }
                 .frame(width: 240)
@@ -248,10 +249,10 @@ struct DesignSystemPreviewView: View {
                     VStack(alignment: .leading, spacing: HDSpacing.sm.rawValue) {
                         Text("Dark band")
                             .font(HDFont.featureHeading)
-                            .foregroundStyle(HDColor.onDark)
+                            .foregroundStyle(theme.onDark)
                         Text("Deep-green surface.")
                             .font(HDFont.caption)
-                            .foregroundStyle(HDColor.onDark.opacity(0.7))
+                            .foregroundStyle(theme.onDark.opacity(0.7))
                     }
                 }
                 .frame(width: 240)
@@ -271,7 +272,7 @@ struct DesignSystemPreviewView: View {
             .padding(HDSpacing.lg.rawValue)
             .background(
                 RoundedRectangle(cornerRadius: HDRadius.lg.rawValue)
-                    .fill(HDColor.deepGreen)
+                    .fill(theme.deepGreen)
             )
 
             HStack(spacing: HDSpacing.lg.rawValue) {
@@ -300,7 +301,7 @@ struct DesignSystemPreviewView: View {
         .frame(width: 240, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: HDRadius.md.rawValue)
-                .fill(HDColor.softStone)
+                .fill(theme.surfaceStone)
         )
     }
 }

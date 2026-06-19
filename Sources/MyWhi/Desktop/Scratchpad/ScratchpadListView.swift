@@ -1,6 +1,8 @@
 // ScratchpadListView.swift
 // Left pane of the Scratchpad section. Searchable, grouped transcript list
 // backed by the in-memory VaultIndex through StatsObserver.
+//
+// Phase 7: HDTheme migration, hardcoded fonts → HDFont tokens.
 
 import SwiftUI
 
@@ -8,15 +10,46 @@ struct ScratchpadListView: View {
 
     @Binding var selection: TranscriptNote?
     @EnvironmentObject private var statsObserver: StatsObserver
+    @Environment(\.hdTheme) private var theme
 
     @State private var searchText: String = ""
     @State private var searchResults: [TranscriptNote] = []
     @State private var searchTask: Task<Void, Never>?
 
+    // Phase 10: date-range filter chips.
+    enum DateFilter: String, CaseIterable, Identifiable {
+        case all, today, week, month
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .all:    return "Всё"
+            case .today:  return "Сегодня"
+            case .week:   return "Неделя"
+            case .month:  return "Месяц"
+            }
+        }
+        /// Calendar predicate applied after search.
+        func matches(_ date: Date) -> Bool {
+            let cal = Calendar.current
+            switch self {
+            case .all:    return true
+            case .today:  return cal.isDateInToday(date)
+            case .week:
+                let weekAgo = cal.date(byAdding: .day, value: -7, to: cal.startOfDay(for: Date()))!
+                return date >= weekAgo
+            case .month:
+                let monthAgo = cal.date(byAdding: .day, value: -30, to: cal.startOfDay(for: Date()))!
+                return date >= monthAgo
+            }
+        }
+    }
+    @State private var dateFilter: DateFilter = .all
+
     private var visibleNotes: [TranscriptNote] {
-        searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let base = searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             ? statsObserver.notes
             : searchResults
+        return base.filter { dateFilter.matches($0.frontmatter.createdAt) }
     }
 
     var body: some View {
@@ -24,6 +57,10 @@ struct ScratchpadListView: View {
             ScratchpadSearchField(text: $searchText) { query in
                 runSearch(query)
             }
+            // Phase 10: chip-row filter. Sits right under the search
+            // field so the relationship to "I'm filtering these results"
+            // is obvious.
+            DateFilterChips(selection: $dateFilter)
 
             if visibleNotes.isEmpty {
                 emptyState
@@ -31,7 +68,7 @@ struct ScratchpadListView: View {
                 list
             }
         }
-        .background(HDColor.canvas)
+        .background(theme.canvas)
         .task {
             await statsObserver.refresh()
             if selection == nil {
@@ -72,32 +109,32 @@ struct ScratchpadListView: View {
                     Text(group.title)
                         .font(HDFont.monoLabel(size: 10, weight: .medium))
                         .hdTracking(0.5)
-                        .foregroundStyle(HDColor.muted)
+                        .foregroundStyle(theme.muted)
                         .padding(.top, HDSpacing.sm.rawValue)
                 }
             }
         }
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
-        .background(HDColor.canvas)
+        .background(theme.canvas)
     }
 
     private var emptyState: some View {
         VStack(spacing: HDSpacing.lg.rawValue) {
             Image(systemName: searchText.isEmpty ? "doc.text" : "magnifyingglass")
-                .font(.system(size: 44, weight: .ultraLight))
-                .foregroundStyle(HDColor.muted)
+                .font(HDFont.emptyInline)
+                .foregroundStyle(theme.muted)
 
             VStack(spacing: HDSpacing.xs.rawValue) {
                 Text(searchText.isEmpty ? "Скажи что-нибудь" : "Ничего не найдено")
                     .font(HDFont.featureHeading)
-                    .foregroundStyle(HDColor.ink)
+                    .foregroundStyle(theme.ink)
 
                 Text(searchText.isEmpty
                      ? "Новые транскрибации появятся здесь."
                      : "Попробуй другой запрос.")
                     .font(HDFont.caption)
-                    .foregroundStyle(HDColor.muted)
+                    .foregroundStyle(theme.muted)
                     .multilineTextAlignment(.center)
             }
         }
@@ -179,44 +216,84 @@ private struct ScratchpadGroup: Identifiable {
     let notes: [TranscriptNote]
 }
 
+// MARK: - Date filter chips (Phase 10)
+
+/// Horizontal row of chip-style buttons that narrow the list to a
+/// date range. Sits directly under the search field so the visual
+/// relationship is obvious.
+private struct DateFilterChips: View {
+    @Environment(\.hdTheme) private var theme
+    @Binding var selection: ScratchpadListView.DateFilter
+
+    var body: some View {
+        HStack(spacing: HDSpacing.xs.rawValue) {
+            ForEach(ScratchpadListView.DateFilter.allCases) { f in
+                Button {
+                    selection = f
+                } label: {
+                    Text(f.label)
+                        .font(HDFont.filterChip)
+                        .padding(.horizontal, HDSpacing.md.rawValue)
+                        .padding(.vertical, HDSpacing.xxs.rawValue + 2)
+                        .foregroundStyle(selection == f ? theme.onPrimary : theme.bodyMuted)
+                        .background(
+                            Capsule()
+                                .fill(selection == f ? theme.primary : theme.surfaceStone)
+                        )
+                        .overlay(
+                            Capsule()
+                                .stroke(theme.border, lineWidth: 1)
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, HDSpacing.md.rawValue)
+        .padding(.vertical, HDSpacing.xs.rawValue)
+    }
+}
+
 // MARK: - Row
 
 private struct ScratchpadRow: View {
+    @Environment(\.hdTheme) private var theme
+
     let note: TranscriptNote
     let isSelected: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(note.title)
-                .font(.system(size: 13, weight: isSelected ? .medium : .regular))
-                .foregroundStyle(isSelected ? .primary : HDColor.ink)
+                .font(HDFont.scratchpadTitle)
+                .foregroundStyle(isSelected ? theme.ink : theme.ink)
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
 
             HStack(spacing: HDSpacing.xs.rawValue) {
                 Text(timeAgoString(from: note.frontmatter.createdAt))
-                    .font(.system(size: 11))
-                    .foregroundStyle(isSelected ? .primary : HDColor.muted)
+                    .font(HDFont.scratchpadMeta)
+                    .foregroundStyle(theme.muted)
 
                 Text("·")
-                    .font(.system(size: 11))
-                    .foregroundStyle(isSelected ? .primary : HDColor.muted)
+                    .font(HDFont.scratchpadMeta)
+                    .foregroundStyle(theme.muted)
 
                 Text("\(note.frontmatter.words) слов")
-                    .font(.system(size: 11))
-                    .foregroundStyle(isSelected ? .primary : HDColor.muted)
+                    .font(HDFont.scratchpadMeta)
+                    .foregroundStyle(theme.muted)
 
                 Spacer(minLength: 0)
 
                 if note.frontmatter.engine == "faster-whisper" {
                     Text("py")
-                        .font(.system(size: 9, weight: .medium))
+                        .font(HDFont.badge)
                         .padding(.horizontal, 4)
                         .padding(.vertical, 1)
                         .background(
-                            Capsule().fill(isSelected ? HDColor.paleBlue.opacity(0.5) : HDColor.paleBlue)
+                            Capsule().fill(theme.surfacePaleBlue)
                         )
-                        .foregroundStyle(isSelected ? .primary : HDColor.actionBlue)
+                        .foregroundStyle(theme.actionBlue)
                 }
             }
         }

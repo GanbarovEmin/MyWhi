@@ -27,6 +27,13 @@ final class AppState: ObservableObject {
     /// True when we fell back from WhisperKit → faster-whisper after an error.
     @Published private(set) var engineDidFallback: Bool = false
 
+    // Phase 8: live streaming transcript (updated ~0.8s during recording).
+    @Published private(set) var livePartialTranscript: String = ""
+
+    /// True while a partial decode is in flight. Drives a "transcribing…"
+    /// indicator in the HUD.
+    @Published private(set) var isLiveDecoding: Bool = false
+
     // Settings is an ObservableObject so SwiftUI bindings work directly.
     // `var` is required for $appState.settings.<field> bindings to compile
     // (the binding's setter writes through this property).
@@ -42,6 +49,10 @@ final class AppState: ObservableObject {
     let vaultIndex: VaultIndex
     let dictionaryStore: PersonalDictionaryStore
     let statsObserver: StatsObserver
+
+    // Phase 8: rolling partial-decode loop driven by the rolling audio
+    // buffer maintained in AudioRecorder.
+    private var liveTranscriber: LiveTranscriber?
 
     /// Set by AppContainer after init so AppState can ask the router to
     /// switch scenes (e.g. switch from .desktop → .menuBar when the
@@ -192,6 +203,9 @@ final class AppState: ObservableObject {
             do {
                 try self.recorder.start()
                 self.status = .recording
+                self.livePartialTranscript = ""
+                self.recorder.resetLiveBuffer()
+                self.startLiveStreaming()
             } catch {
                 self.status = .error
                 self.errorMessage = "Failed to start recording: \(error.localizedDescription)"
@@ -201,8 +215,17 @@ final class AppState: ObservableObject {
 
     func stopRecording() {
         guard status == .recording else { return }
+        // Tear down the live streaming loop first so it doesn't try to
+        // transcribe a buffer that no longer makes sense (we're about
+        // to close the file).
+        liveTranscriber?.stop()
+        // Phase 9: audible cue at recording stop.
+        if settings.soundFeedbackEnabled {
+            SoundFeedback.playStop()
+        }
         do {
             let url = try recorder.stop()
+            recorder.resetLiveBuffer()
             status = .transcribing
             errorMessage = nil
             transcribeFile(at: url)
@@ -217,10 +240,37 @@ final class AppState: ObservableObject {
     /// accident, hit the wrong key, or is just testing).
     func discardRecording() {
         guard status == .recording else { return }
+        liveTranscriber?.stop()
         recorder.cancel()
+        recorder.resetLiveBuffer()
+        livePartialTranscript = ""
         status = .idle
         errorMessage = nil
         NSLog("MyWhi.AppState: recording discarded")
+    }
+
+    // MARK: - Live streaming (Phase 8)
+
+    private func startLiveStreaming() {
+        if liveTranscriber == nil {
+            liveTranscriber = LiveTranscriber(
+                recorder: recorder,
+                engineManager: engineManager,
+                appState: self
+            )
+        }
+        liveTranscriber?.start(
+            model: settings.modelSize,
+            language: settings.language
+        ) { [weak self] partial in
+            self?.livePartialTranscript = partial
+        }
+        // Phase 9: audible cue at recording start (low-volume chime).
+        // Gated on `settings.soundFeedbackEnabled` so users can disable
+        // it from Settings.
+        if settings.soundFeedbackEnabled {
+            SoundFeedback.playStart()
+        }
     }
 
     func transcribeLastRecording() {
@@ -310,6 +360,13 @@ final class AppState: ObservableObject {
                         limit: 10
                     )
                     self.history = self.historyStore.load()
+
+                    // Phase 7.13 — first-successful-transcript onboarding
+                    // auto-dismiss. We use UserDefaults directly (matches
+                    // the @AppStorage key the OnboardingCard reads) so
+                    // the SwiftUI view re-renders without any extra
+                    // plumbing.
+                    UserDefaults.standard.set(true, forKey: "mywhi.hideOnboarding")
                 }
 
                 self.status = .copied
