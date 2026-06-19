@@ -225,6 +225,14 @@ struct SettingsViewDesktop: View {
 
                 Toggle("Звуковой сигнал старт/стоп", isOn: soundFeedbackBinding)
                     .help("Мягкий chime при начале и конце записи.")
+
+                Divider()
+
+                Toggle("Редактировать перед вставкой", isOn: inlineEditorBinding)
+                    .help("После транскрибации показывать редактор вместо авто-копирования. Нажми «Вставить» чтобы скопировать отредактированный текст.")
+
+                Toggle("Push-to-talk (hold-to-record)", isOn: pushToTalkBinding)
+                    .help("Удерживай горячую клавишу чтобы записать, отпусти чтобы остановить. По умолчанию — toggle.")
             }
         }
     }
@@ -241,6 +249,16 @@ struct SettingsViewDesktop: View {
     private var soundFeedbackBinding: Binding<Bool> {
         Binding(get: { appState.settings.soundFeedbackEnabled },
                 set: { appState.settings.soundFeedbackEnabled = $0 })
+    }
+
+    private var inlineEditorBinding: Binding<Bool> {
+        Binding(get: { appState.settings.inlineEditorMode },
+                set: { appState.settings.inlineEditorMode = $0 })
+    }
+
+    private var pushToTalkBinding: Binding<Bool> {
+        Binding(get: { appState.settings.pushToTalkMode },
+                set: { appState.settings.pushToTalkMode = $0 })
     }
 
     private var hotkeyDisplay: String {

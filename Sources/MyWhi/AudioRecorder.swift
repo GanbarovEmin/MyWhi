@@ -98,6 +98,25 @@ final class AudioRecorder: NSObject, ObservableObject {
     nonisolated let liveSamplesLock = NSLock()
     nonisolated(unsafe) private var liveSampleRate: Double = 48000
 
+    // MARK: Audio buffer pool (Phase 12)
+    //
+    // Phase 9 audit: `writeSamplesToFileOnQueue` allocated two fresh
+    // AVAudioPCMBuffer instances per tap (~85ms cadence, ~12 allocs/sec).
+    // On a 10-minute recording that's 7200 buffer allocs plus 7200
+    // Float-array copies — measurable GC pressure and CPU spent in
+    // malloc. The buffers themselves are reusable: we only need to
+    // resize them once to the max expected size for the format pair,
+    // then reset frameLength=0 and overwrite the channel data each
+    // tap.
+    //
+    // The pool lives on `fileQueue` only. Audio taps post work via
+    // `fileQueue.async`, so there's no concurrent access. On
+    // `stop()` we drop the pool so the next recording starts clean.
+    nonisolated(unsafe) private var pooledInBuffer: AVAudioPCMBuffer?
+    nonisolated(unsafe) private var pooledOutBuffer: AVAudioPCMBuffer?
+    nonisolated(unsafe) private var pooledInFormat: AVAudioFormat?
+    nonisolated(unsafe) private var pooledOutFormat: AVAudioFormat?
+
     // MARK: - Storage
 
     /// Recordings directory. Exposed internally for legacy-folder
@@ -265,8 +284,8 @@ final class AudioRecorder: NSObject, ObservableObject {
         }
 
         // Find the last file we wrote. We don't track the URL on
-        // audioFile directly (it lives on the file queue), so we
-        // derive it from the timestamp.
+        // audioFile directly (it lives on the file queue), so we derive
+        // it from the timestamp.
         let url = mostRecentRecordingURL()
         let dur: TimeInterval
         if let started = recordStartedAt {
@@ -278,6 +297,9 @@ final class AudioRecorder: NSObject, ObservableObject {
         lastRecordingURL = url
         recordStartedAt = nil
         currentLevel = 0
+        // Phase 12: drop the buffer pool so the next recording starts
+        // with a fresh allocation.
+        dropBufferPool()
         return url ?? lastRecordingURL ?? URL(fileURLWithPath: "/tmp/mywhi/recordings/")
     }
 
@@ -296,6 +318,8 @@ final class AudioRecorder: NSObject, ObservableObject {
         lastRecordingURL = nil
         lastRecordingDuration = 0
         currentLevel = 0
+        // Phase 12: drop the buffer pool too.
+        dropBufferPool()
     }
 
     // MARK: - Audio tap
@@ -374,38 +398,58 @@ final class AudioRecorder: NSObject, ObservableObject {
     /// to accept further input. That made every live chunk after the
     /// pre-roll flush produce 0 output frames. We only signal
     /// endOfStream on the final chunk in `stop()`.
+    ///
+    /// Phase 12: reuses pooled AVAudioPCMBuffer instances (one for the
+    /// input format, one for the 16kHz output format). On the first
+    /// tap after `start()`, the pool is allocated; subsequent taps
+    /// overwrite the channel data and reset `frameLength`. The Float
+    /// array copy is unavoidable (samples come in from a Swift Array),
+    /// but the AVAudioPCMBuffer / AVAudioFormat allocs no longer happen
+    /// per tap.
     private nonisolated func writeSamplesToFileOnQueue(samples: [Float], sampleRate: Double) {
         guard let file = audioFile, let converter = converter else { return }
 
-        // Build an AVAudioPCMBuffer at the input rate.
-        let inFormat = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32,
-            sampleRate: sampleRate,
-            channels: 1,
-            interleaved: false
-        )!
-        guard let inBuffer = AVAudioPCMBuffer(
-            pcmFormat: inFormat,
-            frameCapacity: AVAudioFrameCount(samples.count)
-        ) else { return }
-        let inData = inBuffer.floatChannelData![0]
-        for (i, s) in samples.enumerated() {
-            inData[i] = s
-        }
-        inBuffer.frameLength = AVAudioFrameCount(samples.count)
-
-        // Output buffer at 16kHz, sized to hold the resampled data.
+        // Lazily allocate (or re-allocate if sample rate changed)
+        // the pool. This is the only path that ever creates new
+        // AVAudioPCMBuffer instances.
         let outFormat = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
             sampleRate: 16_000,
             channels: 1,
             interleaved: false
         )!
-        let expectedOutFrames = AVAudioFrameCount(Double(samples.count) * 16_000.0 / sampleRate + 1024)
-        guard let outBuffer = AVAudioPCMBuffer(
-            pcmFormat: outFormat,
-            frameCapacity: expectedOutFrames
-        ) else { return }
+        let inFormat = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: sampleRate,
+            channels: 1,
+            interleaved: false
+        )!
+
+        if pooledInFormat != inFormat {
+            pooledInFormat = inFormat
+            pooledInBuffer = AVAudioPCMBuffer(
+                pcmFormat: inFormat,
+                frameCapacity: AVAudioFrameCount(samples.count)
+            )
+        }
+        if pooledOutFormat != outFormat {
+            pooledOutFormat = outFormat
+            let expectedOutFrames = AVAudioFrameCount(Double(samples.count) * 16_000.0 / sampleRate + 1024)
+            pooledOutBuffer = AVAudioPCMBuffer(
+                pcmFormat: outFormat,
+                frameCapacity: expectedOutFrames
+            )
+        }
+        guard let inBuffer = pooledInBuffer,
+              let outBuffer = pooledOutBuffer else { return }
+
+        // Overwrite the channel data in-place. The capacity is sized
+        // for the largest tap we'll see; smaller taps just use a prefix.
+        let inData = inBuffer.floatChannelData![0]
+        for (i, s) in samples.enumerated() {
+            inData[i] = s
+        }
+        inBuffer.frameLength = AVAudioFrameCount(samples.count)
 
         var error: NSError?
         var consumed = false
@@ -566,6 +610,24 @@ final class AudioRecorder: NSObject, ObservableObject {
     func resetLiveBuffer() {
         liveSamplesLock.withLock {
             liveSamples.removeAll(keepingCapacity: false)
+        }
+    }
+
+    // MARK: - Buffer pool teardown (Phase 12)
+
+    /// Drop the pooled AVAudioPCMBuffers. Called from `stop()` so the
+    /// next recording starts with a fresh allocation. Without this the
+    /// pool keeps ~64 KB of Float32 alive between recordings.
+    ///
+    /// Public so unit tests can exercise the no-crash / idempotent
+    /// guarantee without setting up a full recording pipeline.
+    nonisolated func dropBufferPool() {
+        fileQueue.async { [weak self] in
+            guard let self else { return }
+            self.pooledInBuffer = nil
+            self.pooledOutBuffer = nil
+            self.pooledInFormat = nil
+            self.pooledOutFormat = nil
         }
     }
 }

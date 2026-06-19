@@ -42,6 +42,21 @@ final class AppSettings: ObservableObject, Codable {
     /// Show a soft chime on record start/stop (Phase 9). Default ON.
     @Published var soundFeedbackEnabled: Bool
 
+    // MARK: Inline editor (Phase 11)
+
+    /// When ON, the menu-bar popover shows an editable TextEditor for
+    /// the last transcript. User can tweak wording before clicking
+    /// "Insert" — which copies + (optionally) pastes into the active
+    /// app. Default OFF to preserve the legacy auto-copy-on-stop flow.
+    @Published var inlineEditorMode: Bool
+
+    // MARK: Push-to-talk (Phase 13)
+
+    /// When ON, the global hotkey behaves as push-to-talk (hold the
+    /// key to record, release to stop). When OFF (default), the hotkey
+    /// toggles recording on each press.
+    @Published var pushToTalkMode: Bool
+
     // MARK: Available values
 
     static let availableModels: [(code: String, label: String, description: String)] = [
@@ -69,7 +84,9 @@ final class AppSettings: ObservableObject, Codable {
         hotkeyModifiers: UInt32 = UInt32(cmdKey | optionKey),
         hotkeyKeyCode: UInt32 = 0x02,   // kVK_ANSI_D
         liveStreamingEnabled: Bool = true,
-        soundFeedbackEnabled: Bool = true
+        soundFeedbackEnabled: Bool = true,
+        inlineEditorMode: Bool = false,
+        pushToTalkMode: Bool = false
     ) {
         // Validate inputs against known values; fall back to defaults so
         // a hand-edited settings file cannot crash the app.
@@ -87,6 +104,8 @@ final class AppSettings: ObservableObject, Codable {
         self.hotkeyKeyCode = hotkeyKeyCode
         self.liveStreamingEnabled = liveStreamingEnabled
         self.soundFeedbackEnabled = soundFeedbackEnabled
+        self.inlineEditorMode = inlineEditorMode
+        self.pushToTalkMode = pushToTalkMode
     }
 
     // MARK: - Persistence
@@ -134,7 +153,8 @@ final class AppSettings: ObservableObject, Codable {
 
     enum CodingKeys: String, CodingKey {
         case modelSize, language, autoCopy, saveHistory, autoPaste, useDarkMode,
-             hotkeyModifiers, hotkeyKeyCode, liveStreamingEnabled, soundFeedbackEnabled
+             hotkeyModifiers, hotkeyKeyCode, liveStreamingEnabled, soundFeedbackEnabled,
+             inlineEditorMode, pushToTalkMode
     }
 
     convenience init(from decoder: Decoder) throws {
@@ -153,7 +173,11 @@ final class AppSettings: ObservableObject, Codable {
             // Phase 8 / 9: default-on for both. Old settings.json files
             // that don't have these keys decode as true.
             liveStreamingEnabled: try c.decodeIfPresent(Bool.self, forKey: .liveStreamingEnabled) ?? true,
-            soundFeedbackEnabled: try c.decodeIfPresent(Bool.self, forKey: .soundFeedbackEnabled) ?? true
+            soundFeedbackEnabled: try c.decodeIfPresent(Bool.self, forKey: .soundFeedbackEnabled) ?? true,
+            // Phase 11 / 13: default OFF for backward compatibility with
+            // existing users.
+            inlineEditorMode: try c.decodeIfPresent(Bool.self, forKey: .inlineEditorMode) ?? false,
+            pushToTalkMode: try c.decodeIfPresent(Bool.self, forKey: .pushToTalkMode) ?? false
         )
     }
 
@@ -169,5 +193,7 @@ final class AppSettings: ObservableObject, Codable {
         try c.encode(hotkeyKeyCode, forKey: .hotkeyKeyCode)
         try c.encode(liveStreamingEnabled, forKey: .liveStreamingEnabled)
         try c.encode(soundFeedbackEnabled, forKey: .soundFeedbackEnabled)
+        try c.encode(inlineEditorMode, forKey: .inlineEditorMode)
+        try c.encode(pushToTalkMode, forKey: .pushToTalkMode)
     }
 }

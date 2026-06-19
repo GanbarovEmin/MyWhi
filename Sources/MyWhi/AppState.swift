@@ -390,4 +390,14 @@ final class AppState: ObservableObject {
         historyStore.clear()
         history = []
     }
+
+    /// Phase 11: promote the editor's edited draft to the canonical
+    /// `lastTranscript`. Called from `MainPopoverView.commitDraft()`
+    /// when the user clicks "Вставить" with edits in place. Keeps the
+    /// `private(set)` invariant by routing through a dedicated method.
+    func promoteLastTranscript(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        lastTranscript = trimmed
+    }
 }

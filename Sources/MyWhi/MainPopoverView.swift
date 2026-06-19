@@ -31,6 +31,16 @@ struct MainPopoverView: View {
     @State private var cachedRecentNotes: [TranscriptNote] = []
     @State private var notesRevision: Int = 0
 
+    // Phase 11: inline editor state. We keep a separate `draftText`
+    // so the user can edit without mutating `appState.lastTranscript`
+    // (which is also used by HomeView for the desktop transcript card
+    // and by StatsObserver for the vault save). The draft seeds
+    // itself from lastTranscript on every change, then the user
+    // diverges via edits; "Insert" commits it.
+    @State private var draftText: String = ""
+    @State private var lastSeededTranscript: String = ""
+    @FocusState private var isEditorFocused: Bool
+
     /// Cache the prefix-of-3 list. Recomputes only when statsObserver.notes
     /// changes (we observe via onChange). Previously this was a computed
     /// property → re-evaluated on every body re-render (every level meter
@@ -58,8 +68,12 @@ struct MainPopoverView: View {
         .padding(HDSpacing.lg.rawValue)
         .frame(width: 380)
         .background(theme.canvas)
-        .onAppear { refreshRecentNotes() }
+        .onAppear {
+            refreshRecentNotes()
+            seedDraftIfNeeded()
+        }
         .onChange(of: statsObserver.notes) { _, _ in refreshRecentNotes() }
+        .onChange(of: appState.lastTranscript) { _, _ in seedDraftIfNeeded() }
         .onReceive(NotificationCenter.default.publisher(for: .mywhiOpenDesktop)) { _ in
             openDesktopWindow()
         }
@@ -71,6 +85,23 @@ struct MainPopoverView: View {
 
     private func refreshRecentNotes() {
         cachedRecentNotes = Array(statsObserver.notes.prefix(3))
+    }
+
+    /// Seed the editor's draft text from `lastTranscript` when the
+    /// underlying transcript changes (i.e. a new transcription just
+    /// finished). We only seed if the user hasn't already diverged —
+    /// if `draftText` doesn't match the previous `lastTranscript` it
+    /// means the user is mid-edit on an older draft and we leave
+    /// them alone.
+    private func seedDraftIfNeeded() {
+        let next = appState.lastTranscript
+        guard !next.isEmpty else { return }
+        // If the draft is empty OR already equals the previous
+        // transcript, take the new one.
+        if draftText.isEmpty || draftText == lastSeededTranscript {
+            draftText = next
+        }
+        lastSeededTranscript = next
     }
 
     // MARK: - Header
@@ -232,32 +263,129 @@ struct MainPopoverView: View {
     // MARK: - Last transcript
 
     private var lastTranscriptCard: some View {
-        HDCard(.stone, cornerRadius: .md, padding: .md) {
+        // Phase 11: when inline editor mode is on, the card becomes an
+        // editable surface so the user can tweak wording before
+        // pasting. When off, we keep the original read-only Text +
+        // Copy button.
+        let inline = appState.settings.inlineEditorMode
+
+        return HDCard(.stone, cornerRadius: .md, padding: .md) {
             VStack(alignment: .leading, spacing: HDSpacing.sm.rawValue) {
                 HStack {
-                    Text("ПОСЛЕДНЯЯ")
+                    Text(inline ? "РЕДАКТОР" : "ПОСЛЕДНЯЯ")
                         .font(HDFont.monoLabel(size: 10))
                         .hdTracking(0.5)
                         .foregroundStyle(theme.muted)
                     Spacer()
-                    Text("\(appState.lastTranscript.count) символов")
+                    Text("\(effectiveTranscript.count) символов")
                         .font(HDFont.micro)
                         .foregroundStyle(theme.muted)
                 }
-                Text(appState.lastTranscript)
-                    .font(HDFont.cardBody)
-                    .foregroundStyle(theme.ink)
-                    .lineLimit(4)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .textSelection(.enabled)
-                HStack {
-                    HDButtonSecondary(title: "Копировать") {
-                        appState.clipboard.copy(appState.lastTranscript)
+                if inline {
+                    inlineEditor
+                } else {
+                    Text(appState.lastTranscript)
+                        .font(HDFont.cardBody)
+                        .foregroundStyle(theme.ink)
+                        .lineLimit(4)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                    HStack {
+                        HDButtonSecondary(title: "Копировать") {
+                            appState.clipboard.copy(appState.lastTranscript)
+                        }
+                        Spacer()
                     }
-                    Spacer()
                 }
             }
         }
+    }
+
+    // MARK: - Inline editor (Phase 11)
+
+    /// The transcript the editor is showing. When inline editor mode
+    /// is on, this is the user's draft (which may diverge from
+    /// `lastTranscript`); otherwise it's just the read-only transcript.
+    private var effectiveTranscript: String {
+        appState.settings.inlineEditorMode ? draftText : appState.lastTranscript
+    }
+
+    private var inlineEditor: some View {
+        VStack(alignment: .leading, spacing: HDSpacing.sm.rawValue) {
+            // TextEditor with a fixed max-height so the popover stays
+            // a usable size — long transcripts scroll inside the
+            // editor rather than blowing up the popover layout.
+            TextEditor(text: $draftText)
+                .font(HDFont.editorBody)
+                .foregroundStyle(theme.ink)
+                .scrollContentBackground(.hidden)
+                .frame(minHeight: 80, maxHeight: 180)
+                .padding(HDSpacing.xs.rawValue)
+                .background(
+                    RoundedRectangle(cornerRadius: HDRadius.xs.rawValue, style: .continuous)
+                        .fill(theme.canvas)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: HDRadius.xs.rawValue, style: .continuous)
+                        .stroke(isEditorFocused ? theme.focusBlue : theme.border, lineWidth: 1)
+                )
+                .focused($isEditorFocused)
+                .submitLabel(.done)
+
+            HStack(spacing: HDSpacing.sm.rawValue) {
+                HDButtonPrimary(title: "Вставить", icon: "arrow.down.to.line") {
+                    commitDraft()
+                }
+                .disabled(draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                HDButtonSecondary(title: "Копировать", icon: "doc.on.doc") {
+                    appState.clipboard.copy(draftText)
+                }
+                .disabled(draftText.isEmpty)
+
+                HDButtonSecondary(title: "Сброс", icon: "arrow.uturn.backward") {
+                    draftText = appState.lastTranscript
+                    lastSeededTranscript = appState.lastTranscript
+                }
+                .help("Откатить к исходной транскрибации")
+                .disabled(draftText == appState.lastTranscript)
+
+                Spacer()
+            }
+
+            if appState.settings.autoPaste {
+                HStack(spacing: HDSpacing.xs.rawValue) {
+                    Image(systemName: "info.circle")
+                        .font(HDFont.iconTiny)
+                        .foregroundStyle(theme.muted)
+                    Text("⌘V сработает в активном приложении")
+                        .font(HDFont.micro)
+                        .foregroundStyle(theme.muted)
+                }
+            }
+        }
+    }
+
+    /// Commit the current draft: copy to clipboard, paste if autoPaste
+    /// is on, fire success haptic, and update `lastTranscript` so the
+    /// Home view and vault reflect the (possibly edited) final text.
+    private func commitDraft() {
+        let trimmed = draftText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        appState.clipboard.copy(trimmed)
+        if appState.settings.autoPaste {
+            AutoPasteService.pasteFromClipboard()
+        }
+        // Promote the edited text to lastTranscript so:
+        //   - The Home view's last transcript card shows the edited text.
+        //   - The vault save (already done during transcribeFile) keeps
+        //     the original WhisperKit output; if you want the edit in
+        //     the vault too, edit the Scratchpad entry.
+        appState.promoteLastTranscript(trimmed)
+        HapticFeedback.success.fire()
+        // Reset the seed marker so a *future* transcription won't be
+        // silently overwritten by the editor's residue.
+        lastSeededTranscript = trimmed
     }
 
     // MARK: - Recent

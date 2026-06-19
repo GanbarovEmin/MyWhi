@@ -12,8 +12,18 @@
 // AppSettings. We register on init, but the user can change the
 // chord in Settings. AppContainer calls `reregister(modifiers:
 // keyCode:)` after the user saves a new chord.
+//
+// Phase 13 — push-to-talk mode
+// When `pushToTalkMode` is enabled in AppSettings, the Carbon press
+// handler starts recording (instead of toggling). A global NSEvent
+// monitor watches for the corresponding key release and stops the
+// recorder. The monitor only fires for events NOT consumed by the
+// focused app — meaning MyWhi's own TextEditor (e.g. the inline
+// editor) can still receive keystrokes for editing without
+// accidentally ending the recording session.
 
 import Foundation
+import AppKit
 import Carbon.HIToolbox
 
 @MainActor
@@ -24,6 +34,9 @@ final class GlobalHotKey {
 
     /// Callback fired when the hot key is pressed.
     private var onPress: (() -> Void)?
+
+    /// Callback fired when the hot key is released (push-to-talk only).
+    private var onRelease: (() -> Void)?
 
     /// The hot key ID — arbitrary, but must be unique within the app.
     private static let hotKeyID: UInt32 = 0x4D57_684B  // "MWhK"
@@ -37,6 +50,15 @@ final class GlobalHotKey {
     /// nonisolated so it can be used as a default parameter value.
     nonisolated static let defaultModifiers: UInt32 = UInt32(cmdKey | optionKey)
     nonisolated static let defaultKeyCode: UInt32 = 0x02
+
+    /// Phase 13: when true, the press handler calls `onPress` (start
+    /// recording) and the release monitor calls `onRelease` (stop).
+    /// When false, both callbacks fire on press (toggle behavior).
+    private(set) var pushToTalkEnabled: Bool = false
+
+    /// Phase 13: handle into the NSEvent global monitor installed
+    /// when push-to-talk is active. nil when push-to-talk is off.
+    private var releaseMonitor: Any?
 
     /// Apply the user's saved settings before the first register() call.
     /// Used at app launch to seed the manager with the persisted chord.
@@ -130,6 +152,10 @@ final class GlobalHotKey {
             return
         }
         register(modifiers: modifiers, keyCode: keyCode, onPress: existingOnPress)
+        // Re-apply push-to-talk if it's still on.
+        if pushToTalkEnabled {
+            installReleaseMonitorIfNeeded()
+        }
     }
 
     func unregister() {
@@ -138,6 +164,105 @@ final class GlobalHotKey {
             self.hotKeyRef = nil
         }
         onPress = nil
+        onRelease = nil
+        removeReleaseMonitor()
+    }
+
+    // MARK: - Push-to-talk (Phase 13)
+
+    /// Enable push-to-talk semantics. The press callback will be
+    /// called on key-down (instead of toggle) and `onRelease` will be
+    /// called when the corresponding key is released.
+    ///
+    /// `onRelease` is invoked when:
+    ///   - The matching key goes up (anywhere in the system), OR
+    ///   - The modifier mask no longer matches (user lifted Cmd or
+    ///     Option while still holding D).
+    ///
+    /// Either way, the user's intent is "I'm done dictating", so we
+    /// stop the recorder.
+    func enablePushToTalk(onPress: @escaping () -> Void, onRelease: @escaping () -> Void) {
+        self.pushToTalkEnabled = true
+        self.onPress = onPress
+        self.onRelease = onRelease
+        installReleaseMonitorIfNeeded()
+    }
+
+    /// Disable push-to-talk semantics. Falls back to toggle.
+    func disablePushToTalk() {
+        self.pushToTalkEnabled = false
+        self.onRelease = nil
+        removeReleaseMonitor()
+    }
+
+    /// Install an NSEvent global monitor that fires `onRelease` when
+    /// the registered chord is released. Global monitor only sees
+    /// events NOT consumed by the focused app, so this is safe even
+    /// with a text editor focused.
+    private func installReleaseMonitorIfNeeded() {
+        // Tear down any existing monitor first.
+        removeReleaseMonitor()
+
+        let targetKey = currentKeyCode
+        let targetMods = carbonToCocoaModifiers(currentModifiers)
+
+        // NSEvent mask for our key-down + modifier-up events.
+        let mask: NSEvent.EventTypeMask = [.keyUp, .flagsChanged]
+        releaseMonitor = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] event in
+            guard let self else { return }
+            Task { @MainActor in
+                self.handleReleaseEvent(event, targetKey: targetKey, targetMods: targetMods)
+            }
+        }
+        NSLog("MyWhi.GlobalHotKey: push-to-talk release monitor installed")
+    }
+
+    private func removeReleaseMonitor() {
+        if let monitor = releaseMonitor {
+            NSEvent.removeMonitor(monitor)
+            releaseMonitor = nil
+        }
+    }
+
+    /// Inspect the event; if it represents the registered chord being
+    /// released, fire `onRelease`.
+    func handleReleaseEvent(_ event: NSEvent, targetKey: UInt32, targetMods: NSEvent.ModifierFlags) {
+        switch event.type {
+        case .keyUp:
+            // Direct key-up for our hotkey's keyCode.
+            if event.keyCode == targetKey {
+                onRelease?()
+            }
+        case .flagsChanged:
+            // Modifier flag change. If the user lifted a modifier that
+            // was part of our chord (Cmd or Option), they effectively
+            // released the hotkey.
+            let currentMods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            if currentMods.intersection(targetMods) != targetMods {
+                // User no longer holds the full chord → stop recording.
+                onRelease?()
+            }
+        default:
+            break
+        }
+    }
+
+    /// Test-only hook so unit tests can exercise the event filter
+    /// without going through a real NSEvent monitor.
+    func test_handleReleaseEvent(_ event: NSEvent, targetKey: UInt32, targetMods: NSEvent.ModifierFlags) {
+        handleReleaseEvent(event, targetKey: targetKey, targetMods: targetMods)
+    }
+
+    /// Convert Carbon modifier flags to NSEvent.ModifierFlags. Carbon
+    /// uses cmdKey/optionKey/shiftKey/controlKey bits; Cocoa uses a
+    /// separate OptionSet.
+    private func carbonToCocoaModifiers(_ carbon: UInt32) -> NSEvent.ModifierFlags {
+        var flags: NSEvent.ModifierFlags = []
+        if carbon & UInt32(cmdKey) != 0     { flags.insert(.command) }
+        if carbon & UInt32(optionKey) != 0  { flags.insert(.option) }
+        if carbon & UInt32(shiftKey) != 0   { flags.insert(.shift) }
+        if carbon & UInt32(controlKey) != 0  { flags.insert(.control) }
+        return flags
     }
 
     deinit {
