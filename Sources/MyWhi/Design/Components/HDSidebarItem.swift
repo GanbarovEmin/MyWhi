@@ -30,33 +30,28 @@ struct HDSidebarItem<Section: Hashable>: View {
             Image(systemName: icon)
                 .font(.system(size: 16, weight: .regular))
                 .frame(width: 20, alignment: .center)
-                // Native sidebar selection handles icon color automatically.
-                // When not selected, use muted; when selected, let native highlight apply.
-                .foregroundStyle(isSelected ? HDColor.primary : HDColor.muted)
+                .foregroundStyle(isSelected ? .primary : HDColor.muted)
 
             Text(label)
                 .font(HDFont.body)
-                .foregroundStyle(isSelected ? HDColor.ink : HDColor.bodyMuted)
+                .foregroundStyle(isSelected ? .primary : HDColor.bodyMuted)
 
             Spacer(minLength: 0)
 
             if let badge {
                 Text(badge)
                     .font(HDFont.micro)
-                    .foregroundStyle(isSelected ? HDColor.primary : HDColor.muted)
+                    .foregroundStyle(isSelected ? .primary : HDColor.muted)
                     .padding(.horizontal, HDSpacing.xs.rawValue + 2)
                     .padding(.vertical, 1)
                     .background(
                         Capsule()
-                            .fill(isSelected ? HDColor.softStone.opacity(0.5) : HDColor.softStone)
+                            .fill(isSelected ? HDColor.softStone.opacity(0.3) : HDColor.softStone)
                     )
             }
         }
         .padding(.vertical, HDSpacing.xs.rawValue)
         .padding(.horizontal, HDSpacing.sm.rawValue)
-        // Don't add custom background — let native sidebar selection
-        // (accent color) handle the highlight. This avoids the conflict
-        // between custom background and native blue selection.
         .contentShape(Rectangle())
         .tag(section)
     }

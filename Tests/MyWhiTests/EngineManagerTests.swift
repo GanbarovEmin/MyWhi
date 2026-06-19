@@ -16,19 +16,16 @@ final class FakeTranscriber: Transcriber, @unchecked Sendable {
     var transcribeError: Error?
     var lastModelRequested: String?
     var transcribeCount: Int = 0
-    let lock = NSLock()
 
     init(name: String) { self.name = name }
 
     func loadModel(_ modelName: String) async throws {
-        lock.lock(); defer { lock.unlock() }
         loadCount += 1
         lastModelRequested = modelName
         if let loadError { throw loadError }
     }
 
     func transcribe(audioPath: String, model: String, language: String) async throws -> String {
-        lock.lock(); defer { lock.unlock() }
         transcribeCount += 1
         if let transcribeError { throw transcribeError }
         return "fake-transcript-\(name)-\(model)"

@@ -78,10 +78,12 @@ struct MyWhiApp: App {
 
 // MARK: - AppDelegate
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
+    private var floatingHUDPanel: NSPanel?
     private var cancellables = Set<AnyCancellable>()
 
     private var container: AppContainer { AppContainer.shared }
@@ -121,6 +123,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .receive(on: RunLoop.main)
             .sink { [weak self] status in
                 self?.refreshIcon(for: status)
+                self?.updateFloatingHUD(for: status)
             }
             .store(in: &cancellables)
 
@@ -201,6 +204,65 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func quit() {
         NSApp.terminate(nil)
+    }
+
+    // MARK: - Floating HUD
+
+    private func updateFloatingHUD(for status: AppStatus) {
+        switch status {
+        case .recording, .transcribing, .error:
+            showFloatingHUD()
+        case .copied:
+            showFloatingHUD()
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 1_400_000_000)
+                guard self?.appState.status == .copied else { return }
+                self?.hideFloatingHUD()
+            }
+        case .idle:
+            hideFloatingHUD()
+        }
+    }
+
+    private func showFloatingHUD() {
+        if floatingHUDPanel == nil {
+            let panel = NSPanel(
+                contentRect: NSRect(x: 0, y: 0, width: 380, height: 86),
+                styleMask: [.borderless, .nonactivatingPanel],
+                backing: .buffered,
+                defer: false
+            )
+            panel.isOpaque = false
+            panel.backgroundColor = .clear
+            panel.hasShadow = false
+            panel.level = .floating
+            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
+            panel.hidesOnDeactivate = false
+            panel.isMovableByWindowBackground = false
+            panel.contentViewController = NSHostingController(
+                rootView: FloatingVoiceHUDView()
+                    .environmentObject(appState)
+            )
+            floatingHUDPanel = panel
+        }
+
+        positionFloatingHUD()
+        floatingHUDPanel?.orderFrontRegardless()
+    }
+
+    private func hideFloatingHUD() {
+        floatingHUDPanel?.orderOut(nil)
+    }
+
+    private func positionFloatingHUD() {
+        guard let panel = floatingHUDPanel else { return }
+        let screen = NSScreen.main ?? NSScreen.screens.first
+        guard let frame = screen?.visibleFrame else { return }
+        let width: CGFloat = 380
+        let height: CGFloat = 86
+        let x = frame.midX - width / 2
+        let y = frame.maxY - height - 24
+        panel.setFrame(NSRect(x: x, y: y, width: width, height: height), display: true)
     }
 
     // MARK: - Icon refresh

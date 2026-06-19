@@ -1,16 +1,17 @@
 // HDButton.swift
-// Cohere-style buttons: Primary (pill, near-black), Secondary (text only),
-// PillOutline (transparent + 1px dark border).
-//
-// Usage:
-//   HDButtonPrimary(title: "Submit") { submit() }
-//   HDButtonSecondary(title: "Cancel") { cancel() }
-//   HDButtonPillOutline(title: "Filter") { filter() }
-//
-// Optional SF Symbol icon:
-//   HDButtonPrimary(title: "Save", icon: "tray.and.arrow.down") { ... }
+// Cohere-style buttons with tactile macOS interaction states.
+// Primary (pill, near-black), Secondary (text only), PillOutline, Coral chip.
 
 import SwiftUI
+
+private struct HDPressableButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.985 : 1.0)
+            .opacity(configuration.isPressed ? 0.86 : 1.0)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
 
 // MARK: - HDButtonPrimary
 
@@ -21,6 +22,7 @@ struct HDButtonPrimary: View {
     let action: () -> Void
 
     @Environment(\.isEnabled) private var isEnabled
+    @State private var isHovering = false
 
     var body: some View {
         Button(action: action) {
@@ -37,21 +39,29 @@ struct HDButtonPrimary: View {
             .foregroundStyle(HDColor.onPrimary)
             .background(
                 Capsule()
-                    .fill(isEnabled ? HDColor.primary : HDColor.muted)
+                    .fill(isEnabled ? HDColor.primary.opacity(isHovering ? 0.92 : 1.0) : HDColor.muted)
             )
+            .overlay(
+                Capsule()
+                    .stroke(HDColor.onPrimary.opacity(isHovering ? 0.18 : 0), lineWidth: 1)
+            )
+            .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(HDPressableButtonStyle())
         .disabled(!isEnabled)
+        .onHover { isHovering = $0 }
     }
 }
 
 // MARK: - HDButtonSecondary
 
-/// Text-only action with underline. For "Explore", "Try", "Learn more" etc.
+/// Text-only action. For lightweight actions where a filled CTA would be noisy.
 struct HDButtonSecondary: View {
     let title: String
     var icon: String? = nil
     let action: () -> Void
+
+    @State private var isHovering = false
 
     var body: some View {
         Button(action: action) {
@@ -62,14 +72,19 @@ struct HDButtonSecondary: View {
                 }
                 Text(title)
                     .font(HDFont.body)
-                    .underline()
+                    .underline(isHovering)
             }
-            .foregroundStyle(HDColor.ink)
-            .padding(.horizontal, 0)
+            .foregroundStyle(isHovering ? HDColor.primary : HDColor.ink)
+            .padding(.horizontal, HDSpacing.xs.rawValue)
             .padding(.vertical, HDSpacing.sm.rawValue)
+            .background(
+                RoundedRectangle(cornerRadius: HDRadius.xs.rawValue, style: .continuous)
+                    .fill(isHovering ? HDColor.softStone.opacity(0.65) : Color.clear)
+            )
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(HDPressableButtonStyle())
+        .onHover { isHovering = $0 }
     }
 }
 
@@ -82,6 +97,8 @@ struct HDButtonPillOutline: View {
     var icon: String? = nil
     var isSelected: Bool = false
     let action: () -> Void
+
+    @State private var isHovering = false
 
     var body: some View {
         Button(action: action) {
@@ -98,25 +115,28 @@ struct HDButtonPillOutline: View {
             .foregroundStyle(isSelected ? HDColor.onPrimary : HDColor.primary)
             .background(
                 Capsule()
-                    .fill(isSelected ? HDColor.primary : Color.clear)
+                    .fill(isSelected ? HDColor.primary : (isHovering ? HDColor.softStone : Color.clear))
             )
             .overlay(
                 Capsule()
-                    .stroke(HDColor.primary, lineWidth: 1)
+                    .stroke(HDColor.primary.opacity(isHovering || isSelected ? 1 : 0.72), lineWidth: 1)
             )
+            .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(HDPressableButtonStyle())
+        .onHover { isHovering = $0 }
     }
 }
 
 // MARK: - HDButtonCoral (taxonomy chip)
 
-/// Coral chip for blog taxonomy. Use sparingly — never as primary CTA.
-/// Matches `blog-filter-chip` in the Cohere design system.
+/// Coral chip for taxonomy/filter UI. Use sparingly — never as primary CTA.
 struct HDButtonCoral: View {
     let title: String
     var isSelected: Bool = false
     let action: () -> Void
+
+    @State private var isHovering = false
 
     var body: some View {
         Button(action: action) {
@@ -127,13 +147,15 @@ struct HDButtonCoral: View {
                 .padding(.vertical, HDSpacing.sm.rawValue)
                 .background(
                     RoundedRectangle(cornerRadius: HDRadius.sm.rawValue, style: .continuous)
-                        .fill(isSelected ? HDColor.coral : Color.clear)
+                        .fill(isSelected ? HDColor.coral : (isHovering ? HDColor.coralSoft.opacity(0.22) : Color.clear))
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: HDRadius.sm.rawValue, style: .continuous)
-                        .stroke(HDColor.coral, lineWidth: 1)
+                        .stroke(HDColor.coral.opacity(isHovering || isSelected ? 1 : 0.75), lineWidth: 1)
                 )
+                .contentShape(RoundedRectangle(cornerRadius: HDRadius.sm.rawValue, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(HDPressableButtonStyle())
+        .onHover { isHovering = $0 }
     }
 }

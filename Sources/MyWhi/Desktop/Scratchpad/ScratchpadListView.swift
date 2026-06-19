@@ -1,7 +1,6 @@
 // ScratchpadListView.swift
-// Left pane of the Scratchpad section. Search field + grouped list of
-// transcript notes. Date groupings: Сегодня / Вчера / На этой неделе
-// / older by month.
+// Left pane of the Scratchpad section. Searchable, grouped transcript list
+// backed by the in-memory VaultIndex through StatsObserver.
 
 import SwiftUI
 
@@ -12,86 +11,172 @@ struct ScratchpadListView: View {
 
     @State private var searchText: String = ""
     @State private var searchResults: [TranscriptNote] = []
+    @State private var searchTask: Task<Void, Never>?
 
-    private var sections: [ScratchpadSection] {
-        let notes = searchText.isEmpty ? statsObserver.notes : searchResults
-        return ScratchpadSection.group(notes)
+    private var visibleNotes: [TranscriptNote] {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? statsObserver.notes
+            : searchResults
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            ScratchpadSearchField(text: $searchText, onChange: { query in
-                Task { await runSearch(query) }
-            })
-            Divider()
-            list
+            ScratchpadSearchField(text: $searchText) { query in
+                runSearch(query)
+            }
+
+            if visibleNotes.isEmpty {
+                emptyState
+            } else {
+                list
+            }
         }
         .background(HDColor.canvas)
-        .onReceive(NotificationCenter.default.publisher(for: .mywhiNavigateToScratchpad)) { note in
-            if let query = note.userInfo?["query"] as? String, !query.isEmpty {
-                searchText = query
-                Task { await runSearch(query) }
+        .task {
+            await statsObserver.refresh()
+            if selection == nil {
+                selection = statsObserver.notes.first
             }
+        }
+        .onChange(of: statsObserver.notes) { _, _ in
+            runSearch(searchText)
+            if selection == nil {
+                selection = visibleNotes.first
+            }
+        }
+        .onDisappear {
+            searchTask?.cancel()
         }
     }
 
     private var list: some View {
-        Group {
-            if statsObserver.notes.isEmpty {
-                emptyState
-            } else {
-                List(selection: $selection) {
-                    ForEach(sections) { section in
-                        Section {
-                            ForEach(section.notes, id: \.id) { note in
-                                ScratchpadRow(note: note, isSelected: selection?.id == note.id)
-                                    .tag(note)
-                                    .listRowSeparator(.hidden)
-                                    .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8))
-                            }
-                        } header: {
-                            Text(section.title.uppercased())
-                                .font(HDFont.monoLabel(size: 10))
-                                .hdTracking(0.5)
-                                .foregroundStyle(HDColor.muted)
-                                .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 4, trailing: 0))
-                        }
+        List(selection: $selection) {
+            ForEach(groupedNotes(), id: \.id) { group in
+                Section {
+                    ForEach(group.notes, id: \.id) { note in
+                        ScratchpadRow(
+                            note: note,
+                            isSelected: selection?.id == note.id
+                        )
+                        .tag(note)
+                        .listRowInsets(EdgeInsets(
+                            top: HDSpacing.xs.rawValue,
+                            leading: HDSpacing.md.rawValue,
+                            bottom: HDSpacing.xs.rawValue,
+                            trailing: HDSpacing.md.rawValue
+                        ))
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
                     }
+                } header: {
+                    Text(group.title)
+                        .font(HDFont.monoLabel(size: 10, weight: .medium))
+                        .hdTracking(0.5)
+                        .foregroundStyle(HDColor.muted)
+                        .padding(.top, HDSpacing.sm.rawValue)
                 }
-                .listStyle(.sidebar)
-                .scrollContentBackground(.hidden)
             }
         }
+        .listStyle(.sidebar)
+        .scrollContentBackground(.hidden)
+        .background(HDColor.canvas)
     }
 
     private var emptyState: some View {
-        VStack(spacing: HDSpacing.md.rawValue) {
-            Spacer()
-            Image(systemName: "waveform")
-                .font(.system(size: 40, weight: .ultraLight))
+        VStack(spacing: HDSpacing.lg.rawValue) {
+            Image(systemName: searchText.isEmpty ? "doc.text" : "magnifyingglass")
+                .font(.system(size: 44, weight: .ultraLight))
                 .foregroundStyle(HDColor.muted)
-            Text("Скажи что-нибудь — начнём")
-                .font(HDFont.featureHeading)
-                .foregroundStyle(HDColor.coral)
-                .multilineTextAlignment(.center)
-            Text("Запиши первую фразу на вкладке «Запись».")
-                .font(HDFont.caption)
-                .foregroundStyle(HDColor.muted)
-                .multilineTextAlignment(.center)
-            Spacer()
+
+            VStack(spacing: HDSpacing.xs.rawValue) {
+                Text(searchText.isEmpty ? "Скажи что-нибудь" : "Ничего не найдено")
+                    .font(HDFont.featureHeading)
+                    .foregroundStyle(HDColor.ink)
+
+                Text(searchText.isEmpty
+                     ? "Новые транскрибации появятся здесь."
+                     : "Попробуй другой запрос.")
+                    .font(HDFont.caption)
+                    .foregroundStyle(HDColor.muted)
+                    .multilineTextAlignment(.center)
+            }
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(HDSpacing.xl.rawValue)
     }
 
-    private func runSearch(_ query: String) async {
-        let trimmed = query.trimmingCharacters(in: .whitespaces)
-        if trimmed.isEmpty {
+    private func runSearch(_ query: String) {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        searchTask?.cancel()
+
+        guard !trimmed.isEmpty else {
             searchResults = []
             return
         }
-        searchResults = await statsObserver.search(trimmed)
+
+        searchTask = Task { @MainActor in
+            let results = await statsObserver.search(trimmed)
+            guard !Task.isCancelled else { return }
+            searchResults = results
+        }
     }
+
+    private func groupedNotes() -> [ScratchpadGroup] {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let yesterday = calendar.date(byAdding: .day, value: -1, to: today) ?? today
+        let weekAgo = calendar.date(byAdding: .day, value: -7, to: today) ?? today
+
+        var todayNotes: [TranscriptNote] = []
+        var yesterdayNotes: [TranscriptNote] = []
+        var weekNotes: [TranscriptNote] = []
+        var older: [Date: [TranscriptNote]] = [:]
+
+        for note in visibleNotes.sorted(by: { $0.frontmatter.createdAt > $1.frontmatter.createdAt }) {
+            let day = calendar.startOfDay(for: note.frontmatter.createdAt)
+            if day == today {
+                todayNotes.append(note)
+            } else if day == yesterday {
+                yesterdayNotes.append(note)
+            } else if day >= weekAgo {
+                weekNotes.append(note)
+            } else {
+                older[day, default: []].append(note)
+            }
+        }
+
+        var groups: [ScratchpadGroup] = []
+        if !todayNotes.isEmpty {
+            groups.append(ScratchpadGroup(id: "today", title: "Сегодня", notes: todayNotes))
+        }
+        if !yesterdayNotes.isEmpty {
+            groups.append(ScratchpadGroup(id: "yesterday", title: "Вчера", notes: yesterdayNotes))
+        }
+        if !weekNotes.isEmpty {
+            groups.append(ScratchpadGroup(id: "week", title: "На этой неделе", notes: weekNotes))
+        }
+
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        formatter.locale = Locale(identifier: "ru_RU")
+
+        for day in older.keys.sorted(by: >) {
+            groups.append(ScratchpadGroup(
+                id: ISO8601DateFormatter().string(from: day),
+                title: formatter.string(from: day),
+                notes: older[day]?.sorted(by: { $0.frontmatter.createdAt > $1.frontmatter.createdAt }) ?? []
+            ))
+        }
+
+        return groups
+    }
+}
+
+private struct ScratchpadGroup: Identifiable {
+    let id: String
+    let title: String
+    let notes: [TranscriptNote]
 }
 
 // MARK: - Row
@@ -104,92 +189,56 @@ private struct ScratchpadRow: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(note.title)
                 .font(.system(size: 13, weight: isSelected ? .medium : .regular))
-                .foregroundStyle(HDColor.ink)
+                .foregroundStyle(isSelected ? .primary : HDColor.ink)
                 .lineLimit(2)
+                .multilineTextAlignment(.leading)
+
             HStack(spacing: HDSpacing.xs.rawValue) {
                 Text(timeAgoString(from: note.frontmatter.createdAt))
                     .font(.system(size: 11))
-                    .foregroundStyle(HDColor.muted)
+                    .foregroundStyle(isSelected ? .primary : HDColor.muted)
+
                 Text("·")
                     .font(.system(size: 11))
-                    .foregroundStyle(HDColor.muted)
+                    .foregroundStyle(isSelected ? .primary : HDColor.muted)
+
                 Text("\(note.frontmatter.words) слов")
                     .font(.system(size: 11))
-                    .foregroundStyle(HDColor.muted)
-                Spacer()
+                    .foregroundStyle(isSelected ? .primary : HDColor.muted)
+
+                Spacer(minLength: 0)
+
                 if note.frontmatter.engine == "faster-whisper" {
-                    // only show "py" pill for the Python engine.
-                    // WhisperKit recordings get no badge to keep the row
-                    // visually quiet (WhisperKit is the default).
                     Text("py")
                         .font(.system(size: 9, weight: .medium))
                         .padding(.horizontal, 4)
                         .padding(.vertical, 1)
-                        .background(Capsule().fill(HDColor.paleBlue))
-                        .foregroundStyle(HDColor.actionBlue)
+                        .background(
+                            Capsule().fill(isSelected ? HDColor.paleBlue.opacity(0.5) : HDColor.paleBlue)
+                        )
+                        .foregroundStyle(isSelected ? .primary : HDColor.actionBlue)
                 }
             }
         }
         .padding(.vertical, 4)
+        .contentShape(Rectangle())
     }
 
     private func timeAgoString(from date: Date) -> String {
-        let fmt = RelativeDateTimeFormatter()
-        fmt.unitsStyle = .short
-        fmt.locale = Locale(identifier: "ru_RU")
-        return fmt.localizedString(for: date, relativeTo: Date())
-    }
-}
+        let calendar = Calendar.current
+        let time = date.formatted(date: .omitted, time: .shortened)
 
-// MARK: - Date grouping
-
-struct ScratchpadSection: Identifiable {
-    let id: String
-    let title: String
-    let notes: [TranscriptNote]
-
-    static func group(_ notes: [TranscriptNote], now: Date = Date(), calendar: Calendar = .current) -> [ScratchpadSection] {
-        let today = calendar.startOfDay(for: now)
-        let yesterday = calendar.date(byAdding: .day, value: -1, to: today)!
-        let weekStart = calendar.date(byAdding: .day, value: -6, to: today)!
-
-        var todayN: [TranscriptNote] = []
-        var yesterdayN: [TranscriptNote] = []
-        var weekN: [TranscriptNote] = []
-        var olderByMonth: [String: [TranscriptNote]] = [:]
-        var olderOrder: [String] = []
-
-        let monthFmt = DateFormatter()
-        monthFmt.locale = Locale(identifier: "ru_RU")
-        monthFmt.dateFormat = "LLLL yyyy"
-
-        for note in notes {
-            let day = calendar.startOfDay(for: note.frontmatter.createdAt)
-            if day == today {
-                todayN.append(note)
-            } else if day == yesterday {
-                yesterdayN.append(note)
-            } else if day >= weekStart {
-                weekN.append(note)
-            } else {
-                let key = monthFmt.string(from: note.frontmatter.createdAt)
-                if olderByMonth[key] == nil {
-                    olderByMonth[key] = []
-                    olderOrder.append(key)
-                }
-                olderByMonth[key]?.append(note)
-            }
+        if calendar.isDateInToday(date) {
+            return time
+        }
+        if calendar.isDateInYesterday(date) {
+            return "Вчера · \(time)"
         }
 
-        var sections: [ScratchpadSection] = []
-        if !todayN.isEmpty    { sections.append(.init(id: "today",     title: "Сегодня",          notes: todayN)) }
-        if !yesterdayN.isEmpty { sections.append(.init(id: "yesterday", title: "Вчера",            notes: yesterdayN)) }
-        if !weekN.isEmpty     { sections.append(.init(id: "week",      title: "На этой неделе",   notes: weekN)) }
-        for key in olderOrder {
-            if let notes = olderByMonth[key] {
-                sections.append(.init(id: "older-\(key)", title: key.capitalized, notes: notes))
-            }
-        }
-        return sections
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "ru_RU")
+        formatter.dateStyle = .short
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
     }
 }

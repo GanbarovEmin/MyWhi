@@ -1,6 +1,6 @@
 // HomeView.swift
-// "Запись" tab — the hero control. Large record button, last-transcript
-// card, engine indicator, optional waveform while recording.
+// "Запись" tab — the hero control. Large record button, live waveform,
+// last-transcript card, engine indicator, and drag-and-drop import.
 
 import SwiftUI
 
@@ -16,9 +16,7 @@ struct HomeView: View {
             ScrollView {
                 VStack(spacing: HDSpacing.xxl.rawValue) {
                     header
-
-                    todayBar   // audit #24
-
+                    todayBar
                     recordControl
 
                     if !appState.lastTranscript.isEmpty {
@@ -41,8 +39,7 @@ struct HomeView: View {
     }
 
     /// Sticky "сегодня" status bar — shows today's word count and
-    /// current streak right under the header. Audit #24. Always
-    /// visible so the user can see progress at a glance.
+    /// current streak right under the header.
     private var todayBar: some View {
         let stats = statsObserver.stats
         let todayWords = wordsToday()
@@ -120,15 +117,26 @@ struct HomeView: View {
                 appState.toggleRecording()
             }
 
+            if appState.status == .recording {
+                HDWaveformView(
+                    level: appState.recorderLevel,
+                    style: .hero,
+                    color: HDColor.deepGreen
+                )
+                .frame(maxWidth: 280)
+                .transition(.opacity.combined(with: .scale(scale: 0.96)))
+            }
+
             statusLabel
         }
         .padding(.vertical, HDSpacing.xl.rawValue)
+        .animation(.easeInOut(duration: 0.18), value: appState.status)
     }
 
     private var statusLabel: some View {
         VStack(spacing: HDSpacing.xs.rawValue) {
             Text(statusHeadline)
-                .font(.system(size: 16, weight: .medium))   // was featureHeading (24px) — audit #20
+                .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(statusColor)
 
             if let err = appState.errorMessage {
@@ -159,10 +167,10 @@ struct HomeView: View {
         let model = appState.settings.modelSize
         let engine = appState.activeEngineName
         switch appState.status {
-        case .idle:         return "Engine: \(engine) · Model: \(model)"
+        case .idle:         return "\(engine) · \(model)"
         case .recording:    return "Говори сейчас"
         case .transcribing: return "Подожди пару секунд"
-        case .copied:       return "Cmd+V вставить"
+        case .copied:       return "⌘V — вставить"
         case .error:        return ""
         }
     }
@@ -197,40 +205,10 @@ struct HomeView: View {
         _ = provider.loadObject(ofClass: URL.self) { url, _ in
             guard let url else { return }
             DispatchQueue.main.async {
-                Task {
-                    await transcribeFile(at: url)
-                }
+                appState.transcribeImportedFile(at: url)
             }
         }
         return true
-    }
-
-    private func transcribeFile(at url: URL) async {
-        let model = appState.settings.modelSize
-        let language = appState.settings.language
-
-        appState.objectWillChange.send()
-        // We don't have a direct "transcribing from file" hook on AppState,
-        // but we can reuse the same engine pipeline. This re-implements
-        // AppState.transcribeFile in the public shape.
-        do {
-            try await appState.engineManager.setEngine("whisperkit", model: model)
-            let text = try await appState.engineManager.transcribe(
-                audioPath: url.path,
-                model: model,
-                language: language
-            )
-            _ = await appState.statsObserver.recordTranscript(
-                text: text,
-                language: language,
-                model: model,
-                engine: appState.activeEngineName,
-                durationSeconds: 0,  // drop-import doesn't have a recorder
-                audio: url.lastPathComponent
-            )
-        } catch {
-            NSLog("MyWhi.HomeView: drop-import failed: \(error)")
-        }
     }
 
     // MARK: - Last transcript
@@ -259,7 +237,6 @@ struct HomeView: View {
                     appState.clipboard.copy(appState.lastTranscript)
                 }
                 HDButtonSecondary(title: "Открыть в Scratchpad", icon: "arrow.right") {
-                    // Triggered via notification; DesktopRootView will switch selection.
                     NotificationCenter.default.post(
                         name: .mywhiNavigateToScratchpad,
                         object: nil,

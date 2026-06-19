@@ -10,6 +10,11 @@ import AVFoundation
 final class AudioRecorderLiveTest: XCTestCase {
 
     func testLiveAudioReachesFile() async throws {
+        try XCTSkipUnless(
+            ProcessInfo.processInfo.environment["MYWHI_RUN_LIVE_AUDIO"] == "1",
+            "Live microphone test is hardware-dependent. Set MYWHI_RUN_LIVE_AUDIO=1 to run it."
+        )
+
         let recorder = AudioRecorder()
         defer { recorder.shutdown() }
 

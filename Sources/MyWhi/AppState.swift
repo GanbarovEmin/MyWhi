@@ -17,6 +17,7 @@ final class AppState: ObservableObject {
 
     @Published private(set) var status: AppStatus = .idle
     @Published private(set) var lastTranscript: String = ""
+    @Published private(set) var recorderLevel: Float = 0
     @Published private(set) var history: [HistoryEntry] = []
     @Published var errorMessage: String?
 
@@ -39,6 +40,7 @@ final class AppState: ObservableObject {
     let clipboard: ClipboardService
     let vaultStore: VaultStore
     let vaultIndex: VaultIndex
+    let dictionaryStore: PersonalDictionaryStore
     let statsObserver: StatsObserver
 
     /// Set by AppContainer after init so AppState can ask the router to
@@ -58,8 +60,16 @@ final class AppState: ObservableObject {
         let vi = VaultIndex()
         self.vaultStore = vs
         self.vaultIndex = vi
+        self.dictionaryStore = PersonalDictionaryStore()
         self.statsObserver = StatsObserver(vaultStore: vs, vaultIndex: vi)
         self.history = historyStore.load()
+
+        recorder.$currentLevel
+            .receive(on: RunLoop.main)
+            .sink { [weak self] level in
+                self?.recorderLevel = level
+            }
+            .store(in: &cancellables)
 
         // Persist settings on any change.
         settings.objectWillChange
@@ -225,7 +235,14 @@ final class AppState: ObservableObject {
 
     // MARK: - Transcribe + clipboard + history
 
-    private func transcribeFile(at url: URL) {
+    func transcribeImportedFile(at url: URL) {
+        guard status != .recording && status != .transcribing else { return }
+        status = .transcribing
+        errorMessage = nil
+        transcribeFile(at: url, durationSeconds: 0)
+    }
+
+    private func transcribeFile(at url: URL, durationSeconds: Double? = nil) {
         let model = settings.modelSize
         let language = settings.language
         let autoCopy = settings.autoCopy
@@ -244,11 +261,13 @@ final class AppState: ObservableObject {
                 self.activeEngineName = engineManager.displayName
                 self.engineDidFallback = engineManager.didFallback
 
-                let text = try await engineManager.transcribe(
+                let rawText = try await engineManager.transcribe(
                     audioPath: url.path,
                     model: model,
                     language: language
                 )
+                let dictionary = await dictionaryStore.load()
+                let text = TranscriptPolisher.polish(rawText, dictionary: dictionary)
                 self.lastTranscript = text
 
                 // Empty result handling: if WhisperKit returned no text
@@ -278,7 +297,7 @@ final class AppState: ObservableObject {
                         language: language,
                         model: model,
                         engine: activeEngineName,
-                        durationSeconds: recorder.lastRecordingDuration,
+                        durationSeconds: durationSeconds ?? recorder.lastRecordingDuration,
                         audio: filename
                     )
                     // Keep legacy history in sync for the menu bar popover.

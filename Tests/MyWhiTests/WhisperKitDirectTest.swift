@@ -69,6 +69,11 @@ final class WhisperKitDirectTest: XCTestCase {
     }
 
     func testRussianTranscription() async throws {
+        try XCTSkipUnless(
+            ProcessInfo.processInfo.environment["MYWHI_RUN_WHISPERKIT_DIRECT"] == "1",
+            "Direct WhisperKit integration test downloads/loads real models. Set MYWHI_RUN_WHISPERKIT_DIRECT=1 to run it."
+        )
+
         let pipe = try await loadModel("medium")
         let text = await transcribe(pipe: pipe, audioPath: russianAudioPath, language: "ru")
         print("[Test] Russian transcription: \(text)")
@@ -84,6 +89,11 @@ final class WhisperKitDirectTest: XCTestCase {
     /// what production uses — it must include at least one of the
     /// marker characters from the source text.
     func testPunctuationPreservedWithSkipSpecialTokensFalse() async throws {
+        try XCTSkipUnless(
+            ProcessInfo.processInfo.environment["MYWHI_RUN_WHISPERKIT_DIRECT"] == "1",
+            "Direct WhisperKit integration test downloads/loads real models. Set MYWHI_RUN_WHISPERKIT_DIRECT=1 to run it."
+        )
+
         let pipe = try await loadModel("medium")
 
         let noPunctText = await transcribe(

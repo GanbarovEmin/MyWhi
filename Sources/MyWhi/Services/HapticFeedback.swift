@@ -13,7 +13,6 @@ enum HapticFeedback {
     case error
 
     func fire() {
-        let type: NSHapticFeedbackManager.FeedbackPattern = .generic
         let time: NSHapticFeedbackManager.PerformanceTime = .now
 
         // Map our semantics onto the available API surface.

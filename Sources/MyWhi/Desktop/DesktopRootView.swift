@@ -57,6 +57,9 @@ struct DesktopRootView: View {
         .onReceive(NotificationCenter.default.publisher(for: .mywhiOpenDesktop)) { _ in
             openDesktopFromMenuBar()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .mywhiNavigateToScratchpad)) { note in
+            navigateToScratchpad(note)
+        }
         .onAppear {
             // Refresh stats whenever the desktop window comes forward.
             Task { await statsObserver.refresh() }
@@ -171,6 +174,19 @@ struct DesktopRootView: View {
         container.sceneRouter.setMode(.desktop)
         // Open (or focus) the desktop window.
         openWindow(id: "desktop")
+    }
+
+    private func navigateToScratchpad(_ notification: Notification) {
+        selection = .scratchpad
+        guard let query = notification.userInfo?["query"] as? String,
+              !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+            scratchpadSelection = statsObserver.notes.first
+            return
+        }
+        scratchpadSelection = statsObserver.notes.first(where: { $0.body == query })
+            ?? statsObserver.notes.first(where: { $0.body.contains(query) })
+            ?? statsObserver.notes.first
     }
 }
 

@@ -25,7 +25,7 @@ struct OnboardingCard: View {
                 Image(systemName: "keyboard")
                     .font(.system(size: 12))
                     .foregroundStyle(HDColor.muted)
-                Text("Cmd+Shift+Скопировать в активное приложение")
+                Text("⌘⌥D — начать запись из любого приложения")
                     .font(HDFont.caption)
                     .foregroundStyle(HDColor.muted)
             }

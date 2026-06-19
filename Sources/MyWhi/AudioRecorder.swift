@@ -34,7 +34,7 @@
 //     Float32 at 16kHz, then AVAudioFile writes the Int16 bytes).
 
 import Foundation
-import AVFoundation
+@preconcurrency import AVFoundation
 import Combine
 
 @MainActor

@@ -16,6 +16,7 @@ struct MainPopoverView: View {
     @EnvironmentObject private var container: AppContainer
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var statsObserver: StatsObserver
+    @Environment(\.openWindow) private var openWindow
 
     private var recentNotes: [TranscriptNote] {
         Array(statsObserver.notes.prefix(3))
@@ -42,6 +43,13 @@ struct MainPopoverView: View {
         .padding(HDSpacing.lg.rawValue)
         .frame(width: 380)
         .background(HDColor.canvas)
+        .onReceive(NotificationCenter.default.publisher(for: .mywhiOpenDesktop)) { _ in
+            openDesktopWindow()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .mywhiOpenDesignPreview)) { _ in
+            container.sceneRouter.setMode(.desktop)
+            openWindow(id: "design-preview")
+        }
     }
 
     // MARK: - Header
@@ -147,7 +155,7 @@ struct MainPopoverView: View {
         VStack(spacing: HDSpacing.md.rawValue) {
             // Live waveform fills the width
             HDWaveformView(
-                level: appState.recorder.currentLevel,
+                level: appState.recorderLevel,
                 style: .compact,
                 color: HDColor.deepGreen
             )
@@ -293,11 +301,15 @@ struct MainPopoverView: View {
                     .foregroundStyle(HDColor.muted)
                 Spacer()
                 HDButtonSecondary(title: "Открыть MyWhi", icon: "arrow.up.right.square") {
-                    NotificationCenter.default.post(name: .mywhiOpenDesktop, object: nil)
-                    container.sceneRouter.setMode(.desktop)
+                    openDesktopWindow()
                 }
             }
         }
+    }
+
+    private func openDesktopWindow() {
+        container.sceneRouter.setMode(.desktop)
+        openWindow(id: "desktop")
     }
 
     @AppStorage("mywhi.hotkeyHintShown") private var hotkeyHintDismissed: Bool = false
