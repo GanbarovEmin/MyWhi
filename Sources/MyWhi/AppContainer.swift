@@ -8,6 +8,7 @@
 // AppState (for state) and AppSceneRouter (for policy).
 
 import SwiftUI
+import Combine
 
 @MainActor
 final class AppContainer: ObservableObject {
@@ -17,6 +18,8 @@ final class AppContainer: ObservableObject {
     let appState: AppState
     let sceneRouter: AppSceneRouter
     let globalHotKey: GlobalHotKey
+    private var undoMonitor: Any?
+    private var cancellables = Set<AnyCancellable>()
 
     private init() {
         self.sceneRouter = AppSceneRouter.shared
@@ -28,13 +31,10 @@ final class AppContainer: ObservableObject {
         globalHotKey.applySettings(appState.settings.hotkeyModifiers,
                                    appState.settings.hotkeyKeyCode)
 
-        // Phase 6.1: warm up the audio engine for pre-roll. prepare()
-        // is async and idempotent — it triggers the mic permission
-        // prompt on first call, which is fine because the user
-        // expects it when they first try to record.
-        Task { @MainActor [weak self] in
-            await self?.appState.recorder.prepare()
-        }
+        // Do not warm up the microphone on launch. macOS surfaces the
+        // permission prompt from recorder.prepare(), so the recorder is
+        // prepared lazily from AppState.startRecording() after an
+        // explicit user action.
 
         // App-menu commands (Phase 5.2) — observers are stored so they
         // don't get deallocated. We forward to the same handlers the
@@ -98,26 +98,15 @@ final class AppContainer: ObservableObject {
         // that fires `stopRecording` when the user releases the chord.
         // The release handler is idempotent — if the recorder was
         // already stopped (e.g. due to Esc), it stays stopped.
-        globalHotKey.enablePushToTalk(
-            onPress: { [weak self] in
-                // Press is handled above via the .mywhiHotKeyPressed
-                // notification path, so this is a no-op. We keep the
-                // signature so the API matches; a future implementation
-                // could route the press here directly instead of via a
-                // notification.
-            },
-            onRelease: { [weak self] in
+        configurePushToTalk(appState.settings.pushToTalkMode)
+        appState.settings.$pushToTalkMode
+            .removeDuplicates()
+            .sink { [weak self] enabled in
                 Task { @MainActor [weak self] in
-                    guard let self else { return }
-                    if self.appState.status == .recording {
-                        self.appState.stopRecording()
-                    }
+                    self?.configurePushToTalk(enabled)
                 }
             }
-        )
-        if !appState.settings.pushToTalkMode {
-            globalHotKey.disablePushToTalk()
-        }
+            .store(in: &cancellables)
 
         // Observe hotkey settings changes and re-register the hotkey
         // with the new chord. Combines the existing settings.publisher
@@ -143,7 +132,7 @@ final class AppContainer: ObservableObject {
         // UndoService.undo() which restores the snapshotted
         // clipboard content. We do this on the main actor since
         // UndoService is @MainActor.
-        NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { event in
+        undoMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { event in
             // Cmd+Shift+Z — keyCode 6 is 'z' on US layout.
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             let isCmdShift = flags.contains(.command) && flags.contains(.shift)
@@ -151,6 +140,30 @@ final class AppContainer: ObservableObject {
             Task { @MainActor in
                 _ = UndoService.shared.undo()
             }
+        }
+    }
+
+    private func configurePushToTalk(_ enabled: Bool) {
+        guard enabled else {
+            globalHotKey.disablePushToTalk()
+            return
+        }
+        globalHotKey.enablePushToTalk(
+            onPress: {},
+            onRelease: { [weak self] in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    if self.appState.status == .recording {
+                        self.appState.stopRecording()
+                    }
+                }
+            }
+        )
+    }
+
+    deinit {
+        if let undoMonitor {
+            NSEvent.removeMonitor(undoMonitor)
         }
     }
 }

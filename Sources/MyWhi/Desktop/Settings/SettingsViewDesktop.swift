@@ -82,7 +82,7 @@ struct SettingsViewDesktop: View {
                         .foregroundStyle(theme.deepGreen)
                 }
 
-                Picker("Model", selection: modelBinding) {
+                Picker("Модель", selection: modelBinding) {
                     ForEach(AppSettings.availableModels, id: \.code) { entry in
                         Text(entry.label).tag(entry.code)
                     }
@@ -99,7 +99,7 @@ struct SettingsViewDesktop: View {
                         .foregroundStyle(theme.muted)
                 }
 
-                Picker("Language", selection: languageBinding) {
+                Picker("Язык", selection: languageBinding) {
                     ForEach(AppSettings.availableLanguages, id: \.code) { lang in
                         Text(lang.label).tag(lang.code)
                     }
@@ -143,8 +143,8 @@ struct SettingsViewDesktop: View {
 
                 Toggle("Копировать в буфер после записи", isOn: autoCopyBinding)
                 Toggle("Сохранять в vault", isOn: saveHistoryBinding)
-                Toggle("Авто-вставка в активное приложение (Cmd+V)", isOn: autoPasteBinding)
-                    .help("Phase 6.2: требует Accessibility permission")
+                Toggle("Авто-вставка в активное приложение (⌘V)", isOn: autoPasteBinding)
+                    .help("Требует разрешение Accessibility")
 
                 Divider()
                     .padding(.vertical, HDSpacing.xs.rawValue)
@@ -195,7 +195,7 @@ struct SettingsViewDesktop: View {
                         if AutoPasteService.isAccessibilityGranted() {
                             Image(systemName: "checkmark.circle.fill")
                                 .foregroundStyle(theme.deepGreen)
-                            Text("Accessibility permission выдана")
+                            Text("Разрешение Accessibility выдано")
                                 .font(HDFont.caption)
                                 .foregroundStyle(theme.muted)
                         } else {
@@ -214,14 +214,14 @@ struct SettingsViewDesktop: View {
 
                 Divider()
 
-                Toggle("Тёмная тема (override system)", isOn: darkModeBinding)
+                Toggle("Тёмная тема вместо системной", isOn: darkModeBinding)
                     .help("Принудительно включить тёмную тему независимо от системных настроек macOS")
 
                 // Phase 8 / 9 — surface the new toggles in Settings so
                 // users can opt out of features that aren't for them.
                 Divider()
 
-                Toggle("Показывать текст во время записи (live streaming)", isOn: liveStreamingBinding)
+                Toggle("Показывать текст во время записи", isOn: liveStreamingBinding)
                     .help("Слова появляются по мере того, как ты говоришь. Требует больше CPU.")
 
                 Toggle("Звуковой сигнал старт/стоп", isOn: soundFeedbackBinding)
@@ -232,7 +232,7 @@ struct SettingsViewDesktop: View {
                 Toggle("Редактировать перед вставкой", isOn: inlineEditorBinding)
                     .help("После транскрибации показывать редактор вместо авто-копирования. Нажми «Вставить» чтобы скопировать отредактированный текст.")
 
-                Toggle("Push-to-talk (hold-to-record)", isOn: pushToTalkBinding)
+                Toggle("Удерживать hotkey для записи", isOn: pushToTalkBinding)
                     .help("Удерживай горячую клавишу чтобы записать, отпусти чтобы остановить. По умолчанию — toggle.")
 
                 // Phase 23: phantom cursor mode. Toggling this on
@@ -240,7 +240,7 @@ struct SettingsViewDesktop: View {
                 // character into the focused app instead of pasting
                 // it as a single Cmd+V. Requires Accessibility
                 // permission (System Settings → Privacy & Security).
-                Toggle("Phantom cursor (ввод посимвольно)", isOn: phantomCursorBinding)
+                Toggle("Посимвольный ввод в активное приложение", isOn: phantomCursorBinding)
                     .help("Ввод текста посимвольно прямо в активное приложение — текст появляется где курсор. Требует разрешения Accessibility.")
 
                 HStack(spacing: HDSpacing.sm.rawValue) {
@@ -261,12 +261,12 @@ struct SettingsViewDesktop: View {
                 .help("Сколько секунд последнего аудио декодировать в каждом live-тике. Меньше — отзывчивее, больше — стабильнее.")
 
                 HStack(spacing: HDSpacing.sm.rawValue) {
-                    Text("Позиция floating HUD:")
+                    Text("Позиция плавающего HUD:")
                         .font(HDFont.formLabel)
                         .foregroundStyle(theme.ink)
                     Picker("", selection: hudPositionBinding) {
-                        Text("Снизу (Wispr Flow, по умолчанию)").tag(AppSettings.HUDPosition.bottom)
-                        Text("Сверху (legacy)").tag(AppSettings.HUDPosition.top)
+                        Text("Снизу").tag(AppSettings.HUDPosition.bottom)
+                        Text("Сверху").tag(AppSettings.HUDPosition.top)
                     }
                     .pickerStyle(.menu)
                     .frame(maxWidth: 320)
@@ -274,7 +274,10 @@ struct SettingsViewDesktop: View {
                 }
                 .help("Где показывать плавающее окно во время записи.")
 
-                Toggle("Голосовые команды (period, comma, new line)", isOn: voiceCommandsBinding)
+                Toggle("Показывать idle-плашку на рабочем столе", isOn: showIdleFloatingHUDBinding)
+                    .help("Когда включено, MyWhi показывает плавающую кнопку записи даже до старта. По умолчанию выключено.")
+
+                Toggle("Голосовые команды пунктуации", isOn: voiceCommandsBinding)
                     .help("Биас декодера на распознавание голосовых команд. «точка» → «.», «запятая» → «,», «новая строка» → перенос.")
             }
         }
@@ -327,6 +330,13 @@ struct SettingsViewDesktop: View {
         )
     }
 
+    private var showIdleFloatingHUDBinding: Binding<Bool> {
+        Binding(
+            get: { appState.settings.showIdleFloatingHUD },
+            set: { appState.settings.showIdleFloatingHUD = $0 }
+        )
+    }
+
     private var voiceCommandsBinding: Binding<Bool> {
         Binding(
             get: { appState.settings.voiceCommandsEnabled },
@@ -367,7 +377,7 @@ struct SettingsViewDesktop: View {
         case 0x10: return "Y"
         case 0x11: return "T"
         case 0x1D...0x2A: return String(["0","1","2","3","4","5","6","7","8","9"][Int(code) - 0x1D])
-        case 0x2C: return "Space"
+        case 0x2C: return "Пробел"
         default:  return String(format: "0x%02X", code)
         }
     }
@@ -429,10 +439,10 @@ struct SettingsViewDesktop: View {
                 Text("MyWhi")
                     .font(HDFont.featureHeading)
                     .foregroundStyle(theme.ink)
-                Text("v2.0.0-alpha · Native macOS dictation powered by WhisperKit")
+                Text("v2.0.0-alpha · локальная диктовка на macOS через WhisperKit")
                     .font(HDFont.caption)
                     .foregroundStyle(theme.muted)
-                Text("100% local. Audio stays on your Mac.")
+                Text("100% локально. Аудио остаётся на этом Mac.")
                     .font(HDFont.micro)
                     .foregroundStyle(theme.muted)
             }

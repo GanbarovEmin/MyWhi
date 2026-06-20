@@ -121,6 +121,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 MainPopoverView()
                     .environmentObject(self.container)
                     .environmentObject(self.appState)
+                    .environmentObject(self.appState.statsObserver)
             }
         )
 
@@ -151,6 +152,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             .store(in: &cancellables)
 
+        appState.settings.$showIdleFloatingHUD
+            .receive(on: RunLoop.main)
+            .dropFirst()
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.updateFloatingHUD(for: self.appState.status)
+            }
+            .store(in: &cancellables)
+
         // When the router switches to .desktop, activate the app so the
         // Dock icon appears and windows come forward.
         sceneRouter.$mode
@@ -177,6 +187,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
             .store(in: &cancellables)
+
+        // Wispr Flow-style baseline: the voice entry point should be
+        // visible before recording starts, not only after the user has
+        // already found a start button.
+        updateFloatingHUD(for: appState.status)
     }
 
     private func handleDesktopActivation() {
@@ -299,6 +314,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func updateFloatingHUD(for status: AppStatus) {
         switch status {
+        case .idle:
+            if appState.settings.showIdleFloatingHUD {
+                showFloatingHUD()
+            } else {
+                hideFloatingHUD()
+            }
         case .recording, .transcribing, .error:
             showFloatingHUD()
         case .copied:
@@ -306,17 +327,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task { @MainActor [weak self] in
                 try? await Task.sleep(nanoseconds: 1_400_000_000)
                 guard self?.appState.status == .copied else { return }
-                self?.hideFloatingHUD()
+                self?.appState.returnToIdleIfCopied()
             }
-        case .idle:
-            hideFloatingHUD()
         }
     }
 
     private func showFloatingHUD() {
         if floatingHUDPanel == nil {
             let panel = NSPanel(
-                contentRect: NSRect(x: 0, y: 0, width: 420, height: 86),
+                contentRect: NSRect(x: 0, y: 0, width: 360, height: 74),
                 styleMask: [.borderless, .nonactivatingPanel],
                 backing: .buffered,
                 defer: false
@@ -365,10 +384,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func positionFloatingHUD() {
         guard let panel = floatingHUDPanel else { return }
-        let screen = NSScreen.main ?? NSScreen.screens.first
+        let screen = targetScreenForFloatingHUD()
         guard let frame = screen?.visibleFrame else { return }
-        let width: CGFloat = 420
-        let height: CGFloat = 86
+        let width: CGFloat = appState.status == .idle ? 360 : 420
+        let height: CGFloat = appState.status == .idle ? 74 : 86
         let x = frame.midX - width / 2
         // Phase 15: respect hudPosition setting. Wispr Flow convention
         // is bottom (close to where the text lands). MyWhi legacy
@@ -383,6 +402,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             y = frame.minY + yInset
         }
         panel.setFrame(NSRect(x: x, y: y, width: width, height: height), display: true)
+    }
+
+    private func targetScreenForFloatingHUD() -> NSScreen? {
+        let mouseLocation = NSEvent.mouseLocation
+        if let screen = NSScreen.screens.first(where: { $0.frame.contains(mouseLocation) }) {
+            return screen
+        }
+        if let windowScreen = NSApp.keyWindow?.screen {
+            return windowScreen
+        }
+        if let originScreen = NSScreen.screens.first(where: {
+            $0.frame.origin.x == 0 && $0.frame.origin.y == 0
+        }) {
+            return originScreen
+        }
+        return NSScreen.main ?? NSScreen.screens.first
     }
 
     // MARK: - Icon refresh

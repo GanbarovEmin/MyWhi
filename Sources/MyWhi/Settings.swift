@@ -74,6 +74,12 @@ final class AppSettings: ObservableObject, Codable {
 
     // MARK: Floating HUD position (Phase 15)
 
+    /// When ON, MyWhi shows the small idle floating record prompt on
+    /// the desktop before recording starts. Default OFF: the global
+    /// HUD should confirm active recording/transcription, not occupy
+    /// the user's workspace while idle.
+    @Published var showIdleFloatingHUD: Bool
+
     /// Where to anchor the floating HUD panel. Wispr Flow uses bottom
     /// (near the cursor). Phase 20 flipped the default from .top
     /// (legacy MyWhi convention) to .bottom (Wispr Flow convention).
@@ -97,18 +103,18 @@ final class AppSettings: ObservableObject, Codable {
     // MARK: Available values
 
     static let availableModels: [(code: String, label: String, description: String)] = [
-        ("tiny",            "tiny",            "~40 MB · fastest · lower accuracy"),
-        ("base",            "base",            "~75 MB · fast · decent"),
-        ("small",           "small",           "~250 MB · recommended for dictation"),
-        ("medium",          "medium",          "~750 MB · high quality · slower first load"),
-        ("large-v3-turbo",  "large-v3-turbo",  "~1.5 GB · best speed/quality tradeoff"),
-        ("large-v3",        "large-v3",        "~1.5 GB · highest accuracy · slowest"),
+        ("tiny",            "tiny",            "~40 MB · самый быстрый · ниже точность"),
+        ("base",            "base",            "~75 MB · быстрый · базовая точность"),
+        ("small",           "small",           "~250 MB · рекомендован для диктовки"),
+        ("medium",          "medium",          "~750 MB · выше качество · медленнее первый запуск"),
+        ("large-v3-turbo",  "large-v3-turbo",  "~1.5 GB · лучший баланс скорости и качества"),
+        ("large-v3",        "large-v3",        "~1.5 GB · максимальная точность · самый медленный"),
     ]
 
     static let availableLanguages: [(code: String, label: String)] = [
-        ("ru",   "Russian"),
-        ("en",   "English"),
-        ("auto", "Auto-detect"),
+        ("ru",   "Русский"),
+        ("en",   "Английский"),
+        ("auto", "Авто"),
     ]
 
     init(
@@ -126,6 +132,7 @@ final class AppSettings: ObservableObject, Codable {
         soundFeedbackEnabled: Bool = true,
         inlineEditorMode: Bool = false,
         pushToTalkMode: Bool = false,
+        showIdleFloatingHUD: Bool = false,
         hudPosition: HUDPosition = .bottom,
         voiceCommandsEnabled: Bool = true
     ) {
@@ -152,6 +159,7 @@ final class AppSettings: ObservableObject, Codable {
         self.soundFeedbackEnabled = soundFeedbackEnabled
         self.inlineEditorMode = inlineEditorMode
         self.pushToTalkMode = pushToTalkMode
+        self.showIdleFloatingHUD = showIdleFloatingHUD
         self.hudPosition = hudPosition
         self.voiceCommandsEnabled = voiceCommandsEnabled
     }
@@ -203,7 +211,7 @@ final class AppSettings: ObservableObject, Codable {
         case modelSize, language, autoCopy, saveHistory, autoPaste, useDarkMode,
              hotkeyModifiers, hotkeyKeyCode, liveStreamingEnabled, soundFeedbackEnabled,
              inlineEditorMode, pushToTalkMode, liveWindowSeconds, hudPosition,
-             voiceCommandsEnabled, phantomCursorMode
+             voiceCommandsEnabled, phantomCursorMode, showIdleFloatingHUD
     }
 
     convenience init(from decoder: Decoder) throws {
@@ -238,6 +246,7 @@ final class AppSettings: ObservableObject, Codable {
             // existing users.
             inlineEditorMode: try c.decodeIfPresent(Bool.self, forKey: .inlineEditorMode) ?? false,
             pushToTalkMode: try c.decodeIfPresent(Bool.self, forKey: .pushToTalkMode) ?? false,
+            showIdleFloatingHUD: try c.decodeIfPresent(Bool.self, forKey: .showIdleFloatingHUD) ?? false,
             hudPosition: hudPos,
             // Phase 17: default ON for voice commands (mild bias,
             // useful for most users).
@@ -260,6 +269,7 @@ final class AppSettings: ObservableObject, Codable {
         try c.encode(soundFeedbackEnabled, forKey: .soundFeedbackEnabled)
         try c.encode(inlineEditorMode, forKey: .inlineEditorMode)
         try c.encode(pushToTalkMode, forKey: .pushToTalkMode)
+        try c.encode(showIdleFloatingHUD, forKey: .showIdleFloatingHUD)
         try c.encode(liveWindowSeconds, forKey: .liveWindowSeconds)
         try c.encode(hudPosition.rawValue, forKey: .hudPosition)
         try c.encode(voiceCommandsEnabled, forKey: .voiceCommandsEnabled)

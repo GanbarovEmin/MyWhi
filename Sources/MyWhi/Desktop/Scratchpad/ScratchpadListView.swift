@@ -9,6 +9,7 @@ import SwiftUI
 struct ScratchpadListView: View {
 
     @Binding var selection: TranscriptNote?
+    @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var statsObserver: StatsObserver
     @Environment(\.hdTheme) private var theme
 
@@ -137,9 +138,61 @@ struct ScratchpadListView: View {
                     .foregroundStyle(theme.muted)
                     .multilineTextAlignment(.center)
             }
+
+            if searchText.isEmpty {
+                Button {
+                    appState.toggleRecording()
+                } label: {
+                    Label(emptyRecordTitle, systemImage: emptyRecordIcon)
+                        .font(HDFont.actionLabel)
+                        .padding(.horizontal, HDSpacing.lg.rawValue)
+                        .padding(.vertical, HDSpacing.sm.rawValue)
+                        .background(
+                            Capsule()
+                                .fill(appState.status == .recording ? theme.deepGreen : theme.primary)
+                        )
+                        .foregroundStyle(theme.onPrimary)
+                }
+                .buttonStyle(.plain)
+                .disabled(appState.status == .transcribing)
+                .help(emptyRecordHelp)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(HDSpacing.xl.rawValue)
+    }
+
+    private var emptyRecordTitle: String {
+        switch appState.status {
+        case .recording:
+            return "Остановить запись"
+        case .transcribing:
+            return "Транскрибация..."
+        default:
+            return "Начать запись"
+        }
+    }
+
+    private var emptyRecordIcon: String {
+        switch appState.status {
+        case .recording:
+            return "stop.fill"
+        case .transcribing:
+            return "waveform"
+        default:
+            return "record.circle"
+        }
+    }
+
+    private var emptyRecordHelp: String {
+        switch appState.status {
+        case .recording:
+            return "Остановить текущую запись"
+        case .transcribing:
+            return "Подождите, пока закончится транскрибация"
+        default:
+            return "Начать запись прямо из Scratchpad"
+        }
     }
 
     private func runSearch(_ query: String) {

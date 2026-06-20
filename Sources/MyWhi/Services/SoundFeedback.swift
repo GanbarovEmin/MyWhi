@@ -25,7 +25,7 @@
 // source node is the modern, simple path — and we already link it.
 
 import Foundation
-import AVFoundation
+@preconcurrency import AVFoundation
 
 @MainActor
 enum SoundFeedback {

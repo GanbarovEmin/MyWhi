@@ -13,7 +13,7 @@ struct FloatingVoiceHUDView: View {
     @Environment(\.hdTheme) private var theme
 
     var body: some View {
-        HStack(spacing: HDSpacing.md.rawValue) {
+        HStack(spacing: appState.status == .idle ? HDSpacing.sm.rawValue : HDSpacing.md.rawValue) {
             statusGlyph
 
             VStack(alignment: .leading, spacing: 4) {
@@ -80,7 +80,27 @@ struct FloatingVoiceHUDView: View {
 
             Spacer(minLength: HDSpacing.sm.rawValue)
 
-            if appState.status == .recording {
+            if appState.status == .idle {
+                Button {
+                    appState.startRecording()
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "mic.fill")
+                            .font(.system(size: 12, weight: .semibold))
+                        Text("Начать")
+                            .font(HDFont.monoLabel(size: 12, weight: .semibold))
+                    }
+                    .foregroundStyle(theme.onPrimary)
+                    .padding(.horizontal, HDSpacing.sm.rawValue + 2)
+                    .padding(.vertical, 7)
+                    .background(
+                        Capsule()
+                            .fill(theme.primary)
+                    )
+                }
+                .buttonStyle(.plain)
+                .help("Начать запись")
+            } else if appState.status == .recording {
                 Button {
                     appState.discardRecording()
                 } label: {
@@ -105,18 +125,23 @@ struct FloatingVoiceHUDView: View {
                 .help("Остановить и транскрибировать")
             }
         }
-        .padding(.horizontal, HDSpacing.lg.rawValue)
-        .padding(.vertical, HDSpacing.md.rawValue)
-        .frame(width: 420)
+        .padding(.horizontal, appState.status == .idle ? HDSpacing.md.rawValue : HDSpacing.lg.rawValue)
+        .padding(.vertical, appState.status == .idle ? HDSpacing.sm.rawValue : HDSpacing.md.rawValue)
+        .frame(width: appState.status == .idle ? 360 : 420)
         .background(
-            RoundedRectangle(cornerRadius: HDRadius.xl.rawValue, style: .continuous)
+            RoundedRectangle(cornerRadius: appState.status == .idle ? 28 : HDRadius.xl.rawValue, style: .continuous)
                 .fill(theme.surface.opacity(0.96))
                 .overlay(
-                    RoundedRectangle(cornerRadius: HDRadius.xl.rawValue, style: .continuous)
+                    RoundedRectangle(cornerRadius: appState.status == .idle ? 28 : HDRadius.xl.rawValue, style: .continuous)
                         .stroke(theme.border, lineWidth: 1)
                 )
-                .shadow(color: Color.black.opacity(0.14), radius: 24, x: 0, y: 14)
+                .shadow(color: Color.black.opacity(appState.status == .idle ? 0.10 : 0.14), radius: appState.status == .idle ? 16 : 24, x: 0, y: appState.status == .idle ? 8 : 14)
         )
+        .contentShape(RoundedRectangle(cornerRadius: appState.status == .idle ? 28 : HDRadius.xl.rawValue, style: .continuous))
+        .onTapGesture {
+            guard appState.status == .idle else { return }
+            appState.startRecording()
+        }
         .animation(.easeInOut(duration: 0.18), value: appState.status)
         .animation(.easeInOut(duration: 0.18), value: appState.livePartialTranscript)
     }
@@ -125,9 +150,9 @@ struct FloatingVoiceHUDView: View {
         ZStack {
             Circle()
                 .fill(glyphBackground)
-                .frame(width: 42, height: 42)
+                .frame(width: appState.status == .idle ? 36 : 42, height: appState.status == .idle ? 36 : 42)
             Image(systemName: appState.status.iconName)
-                .font(HDFont.hudGlyph)
+                .font(appState.status == .idle ? .system(size: 16, weight: .semibold) : HDFont.hudGlyph)
                 .foregroundStyle(glyphForeground)
         }
         .symbolEffect(.pulse, options: .repeating, isActive: appState.status == .recording)
@@ -167,7 +192,7 @@ struct FloatingVoiceHUDView: View {
         case .transcribing: return "Преобразую речь"
         case .copied:       return "Текст готов"
         case .error:        return "Не получилось"
-        case .idle:         return "MyWhi"
+        case .idle:         return "Нажми, чтобы диктовать"
         }
     }
 
@@ -179,9 +204,9 @@ struct FloatingVoiceHUDView: View {
         default:
             // Phase 23: hint shows the active hotkey mode.
             if appState.settings.pushToTalkMode {
-                return "⌘⌥D — удерживайте для записи"
+                return "Клик или удерживай ⌘⌥D"
             }
-            return "⌘⌥D — начать запись"
+            return "Клик или ⌘⌥D"
         }
     }
 }

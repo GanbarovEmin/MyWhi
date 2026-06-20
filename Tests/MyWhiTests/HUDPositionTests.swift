@@ -17,15 +17,22 @@ final class HUDPositionTests: XCTestCase {
         XCTAssertEqual(settings.hudPosition, .bottom)
     }
 
+    func testIdleFloatingHUDDefaultsOff() {
+        let settings = AppSettings()
+        XCTAssertFalse(settings.showIdleFloatingHUD)
+    }
+
     /// Phase 15: round-trip — set bottom, encode, decode, must stay bottom.
     func testRoundTripPreservesBottomPosition() throws {
         let s = AppSettings()
         s.hudPosition = .bottom
+        s.showIdleFloatingHUD = true
 
         let encoder = JSONEncoder()
         let data = try encoder.encode(s)
         let decoded = try JSONDecoder().decode(AppSettings.self, from: data)
         XCTAssertEqual(decoded.hudPosition, .bottom)
+        XCTAssertTrue(decoded.showIdleFloatingHUD)
     }
 
     /// Phase 15: a settings.json without `hudPosition` must decode
@@ -50,6 +57,7 @@ final class HUDPositionTests: XCTestCase {
         """.data(using: .utf8)!
         let decoded = try JSONDecoder().decode(AppSettings.self, from: json)
         XCTAssertEqual(decoded.hudPosition, .top)
+        XCTAssertFalse(decoded.showIdleFloatingHUD)
     }
 
     /// Phase 15: a corrupt hudPosition value (e.g. "middle" from a

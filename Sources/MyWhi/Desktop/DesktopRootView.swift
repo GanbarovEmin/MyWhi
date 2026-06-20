@@ -1,5 +1,5 @@
 // DesktopRootView.swift
-// The main desktop window shell. NavigationSplitView with sidebar
+// The main desktop window shell. Fixed sidebar
 // (Запись / Scratchpad / Insights / Настройки) + a detail pane that
 // swaps based on selection.
 //
@@ -51,10 +51,12 @@ struct DesktopRootView: View {
     @State private var scratchpadSelection: TranscriptNote?
 
     var body: some View {
-        NavigationSplitView {
+        HStack(spacing: 0) {
             sidebar
-        } detail: {
+                .frame(width: 240)
+            Divider()
             detail
+                .frame(minWidth: 640)
         }
         .background(theme.canvas)
         .onReceive(NotificationCenter.default.publisher(for: .mywhiOpenDesktop)) { _ in
@@ -64,6 +66,9 @@ struct DesktopRootView: View {
             navigateToScratchpad(note)
         }
         .onAppear {
+            if selection == nil {
+                selection = .home
+            }
             // Refresh stats whenever the desktop window comes forward.
             Task { await statsObserver.refresh() }
         }
@@ -89,23 +94,28 @@ struct DesktopRootView: View {
             Divider()
                 .padding(.horizontal, HDSpacing.lg.rawValue)
 
-            // Section list
-            List(selection: $selection) {
+            // Section list. Plain buttons are more reliable here than
+            // macOS List(selection:) inside NavigationSplitView: on some
+            // configurations the native sidebar renderer reserved the
+            // column but drew no content.
+            VStack(spacing: HDSpacing.xs.rawValue) {
                 ForEach(SidebarSection.allCases) { section in
-                    HDSidebarItem(
-                        icon: section.icon,
-                        label: section.label,
-                        section: section,
-                        badge: badge(for: section),
-                        selection: selection
-                    )
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets(top: HDSpacing.xs.rawValue, leading: HDSpacing.sm.rawValue, bottom: HDSpacing.xs.rawValue, trailing: HDSpacing.sm.rawValue))
+                    Button {
+                        selection = section
+                    } label: {
+                        HDSidebarItem(
+                            icon: section.icon,
+                            label: section.label,
+                            section: section,
+                            badge: badge(for: section),
+                            selection: selection
+                        )
+                    }
+                    .buttonStyle(.plain)
                 }
             }
-            .listStyle(.sidebar)
-            .scrollContentBackground(.hidden)
+            .padding(.horizontal, HDSpacing.sm.rawValue)
+            .padding(.top, HDSpacing.md.rawValue)
 
             Spacer()
 
@@ -126,7 +136,7 @@ struct DesktopRootView: View {
             .padding(.bottom, HDSpacing.lg.rawValue)
             .padding(.top, HDSpacing.sm.rawValue)
         }
-        .frame(minWidth: 220, idealWidth: 240, maxWidth: 280)
+        .frame(maxHeight: .infinity)
         .background(theme.canvas)
     }
 
@@ -168,6 +178,22 @@ struct DesktopRootView: View {
             }
         }
         .animation(.easeInOut(duration: 0.18), value: selection)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if showsDesktopRecordingPill {
+                DesktopRecordingPill()
+                    .padding(.horizontal, HDSpacing.xl.rawValue)
+                    .padding(.bottom, HDSpacing.md.rawValue)
+            }
+        }
+    }
+
+    private var showsDesktopRecordingPill: Bool {
+        switch selection {
+        case .home, .scratchpad, .none:
+            return true
+        case .insights, .settings:
+            return false
+        }
     }
 
     // MARK: - Notification handler
@@ -175,6 +201,7 @@ struct DesktopRootView: View {
     private func openDesktopFromMenuBar() {
         // Switch the activation policy to .desktop so the Dock icon shows.
         container.sceneRouter.setMode(.desktop)
+        selection = .home
         // Open (or focus) the desktop window.
         openWindow(id: "desktop")
     }
@@ -190,6 +217,210 @@ struct DesktopRootView: View {
         scratchpadSelection = statsObserver.notes.first(where: { $0.body == query })
             ?? statsObserver.notes.first(where: { $0.body.contains(query) })
             ?? statsObserver.notes.first
+    }
+}
+
+// MARK: - Persistent recording entry point
+
+/// Wispr Flow-style control that is always visible in the desktop
+/// window. Recording must never depend on the sidebar being open or on
+/// the user finding the "Запись" section first.
+private struct DesktopRecordingPill: View {
+    @EnvironmentObject private var appState: AppState
+    @Environment(\.hdTheme) private var theme
+
+    var body: some View {
+        HStack(spacing: HDSpacing.md.rawValue) {
+            Button {
+                appState.toggleRecording()
+            } label: {
+                ZStack {
+                    Circle()
+                        .fill(glyphFill)
+                        .frame(width: 40, height: 40)
+                    Image(systemName: glyphIcon)
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(glyphForeground)
+                }
+            }
+            .buttonStyle(.plain)
+            .disabled(appState.status == .transcribing)
+            .help(primaryHelp)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: HDSpacing.xs.rawValue) {
+                    Text(title)
+                        .font(HDFont.actionLabel)
+                        .foregroundStyle(theme.ink)
+                    if appState.status == .recording {
+                        DesktopRecordingDurationView()
+                    }
+                }
+
+                if appState.status == .recording {
+                    if !appState.livePartialTranscript.isEmpty {
+                        Text(appState.livePartialTranscript)
+                            .font(HDFont.micro)
+                            .foregroundStyle(theme.muted)
+                            .lineLimit(1)
+                            .contentTransition(.opacity)
+                    } else {
+                        HDWaveformView(
+                            level: appState.recorderLevel,
+                            style: .compact,
+                            color: theme.deepGreen
+                        )
+                        .frame(width: 180, height: 18)
+                    }
+                } else {
+                    Text(subtitle)
+                        .font(HDFont.micro)
+                        .foregroundStyle(theme.muted)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer(minLength: HDSpacing.sm.rawValue)
+
+            if appState.status == .recording {
+                Button {
+                    appState.discardRecording()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .bold))
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(theme.muted)
+                .help("Отменить запись")
+
+                Button {
+                    appState.stopRecording()
+                } label: {
+                    Image(systemName: "stop.fill")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(theme.onPrimary)
+                        .frame(width: 32, height: 32)
+                        .background(Circle().fill(theme.primary))
+                }
+                .buttonStyle(.plain)
+                .help("Остановить и транскрибировать")
+            } else {
+                Text("⌘⌥D")
+                    .font(HDFont.monoLabel(size: 11, weight: .medium))
+                    .foregroundStyle(theme.muted)
+                    .padding(.horizontal, HDSpacing.sm.rawValue)
+                    .padding(.vertical, 6)
+                    .background(
+                        Capsule()
+                            .fill(theme.surfaceStone)
+                    )
+            }
+        }
+        .padding(.horizontal, HDSpacing.md.rawValue)
+        .padding(.vertical, HDSpacing.sm.rawValue)
+        .frame(maxWidth: 520)
+        .background(
+            Capsule(style: .continuous)
+                .fill(theme.surface.opacity(0.98))
+                .overlay(
+                    Capsule(style: .continuous)
+                        .stroke(theme.border, lineWidth: 1)
+                )
+                .shadow(color: Color.black.opacity(0.12), radius: 22, x: 0, y: 12)
+        )
+        .contentShape(Capsule(style: .continuous))
+        .onTapGesture {
+            guard appState.status != .transcribing else { return }
+            appState.toggleRecording()
+        }
+        .animation(.easeInOut(duration: 0.18), value: appState.status)
+        .animation(.easeInOut(duration: 0.18), value: appState.livePartialTranscript)
+    }
+
+    private var glyphIcon: String {
+        switch appState.status {
+        case .recording:
+            return "mic.fill"
+        case .transcribing:
+            return "waveform"
+        default:
+            return "mic"
+        }
+    }
+
+    private var glyphFill: Color {
+        switch appState.status {
+        case .recording:
+            return theme.deepGreen
+        case .transcribing:
+            return theme.coral
+        default:
+            return theme.primary
+        }
+    }
+
+    private var glyphForeground: Color {
+        switch appState.status {
+        case .recording:
+            return theme.onDark
+        default:
+            return theme.onPrimary
+        }
+    }
+
+    private var title: String {
+        switch appState.status {
+        case .recording:
+            return appState.settings.pushToTalkMode ? "Слушаю (удерживайте)" : "Слушаю"
+        case .transcribing:
+            return "Преобразую речь"
+        case .copied:
+            return "Текст готов"
+        case .error:
+            return "Нужна проверка"
+        case .idle:
+            return "Нажми, чтобы диктовать"
+        }
+    }
+
+    private var subtitle: String {
+        switch appState.status {
+        case .idle:
+            return appState.settings.pushToTalkMode
+                ? "Клик или удерживай ⌘⌥D для записи"
+                : "Клик или ⌘⌥D для старта"
+        case .transcribing:
+            return "WhisperKit · \(appState.settings.modelSize)"
+        case .copied:
+            return appState.settings.autoPaste ? "Вставлено в активное приложение" : "Скопировано в буфер"
+        case .error:
+            return appState.errorMessage ?? "Проверь микрофон и разрешения"
+        case .recording:
+            return "Говори сейчас"
+        }
+    }
+
+    private var primaryHelp: String {
+        switch appState.status {
+        case .recording:
+            return "Остановить запись"
+        case .transcribing:
+            return "Идёт транскрибация"
+        default:
+            return "Начать запись"
+        }
+    }
+}
+
+private struct DesktopRecordingDurationView: View {
+    private let startTime = Date()
+
+    var body: some View {
+        Text(timerInterval: startTime...Date.distantFuture, countsDown: false, showsHours: false)
+            .font(HDFont.monoLabel(size: 12, weight: .medium))
+            .foregroundStyle(HDColor.deepGreen)
+            .monospacedDigit()
     }
 }
 

@@ -56,7 +56,7 @@ final class InlineEditorTests: XCTestCase {
     /// Phase 11: round-trip — set true, encode, decode, must stay true.
     func testRoundTripPreservesInlineEditorMode() throws {
         let settings = AppSettings()
-        var copy = settings
+        let copy = settings
         copy.inlineEditorMode = true
 
         let encoder = JSONEncoder()

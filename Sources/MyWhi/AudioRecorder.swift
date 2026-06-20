@@ -41,6 +41,26 @@ import Combine
 @MainActor
 final class AudioRecorder: NSObject, ObservableObject {
 
+    enum RecorderError: LocalizedError {
+        case engineNotReady
+        case outputOpenFailed(URL, Error)
+        case converterUnavailable
+        case missingRecordingFile
+
+        var errorDescription: String? {
+            switch self {
+            case .engineNotReady:
+                return "Audio engine is not ready yet."
+            case .outputOpenFailed(let url, let error):
+                return "Failed to open recording file \(url.lastPathComponent): \(error.localizedDescription)"
+            case .converterUnavailable:
+                return "Audio converter is not available for the current input device."
+            case .missingRecordingFile:
+                return "Recording finished, but no audio file was written."
+            }
+        }
+    }
+
     // MARK: - Engine
 
     private nonisolated let engine = AVAudioEngine()
@@ -78,6 +98,7 @@ final class AudioRecorder: NSObject, ObservableObject {
     @Published private(set) var currentLevel: Float = 0
     private(set) var lastRecordingURL: URL?
     private(set) var lastRecordingDuration: TimeInterval = 0
+    private var currentRecordingURL: URL?
 
     /// Phase 22: tracks whether the most recent file write succeeded.
     /// The UI can observe this and surface a persistent warning so the
@@ -161,12 +182,11 @@ final class AudioRecorder: NSObject, ObservableObject {
     // MARK: - Lifecycle
 
     /// Start the engine and pre-roll capture. Idempotent — safe to
-    /// call multiple times. Called by AppContainer on first scene
-    /// activation, and by `start()` if the engine isn't up yet.
+    /// call multiple times. Called lazily from AppState.startRecording()
+    /// after an explicit user action.
     ///
-    /// This will trigger macOS's microphone permission prompt on the
-    /// first call. That's intentional — we want the engine warm so
-    /// the first Cmd+Option+D press has zero mic latency.
+    /// This can trigger macOS's microphone permission prompt on the
+    /// first call, so it must not run during app launch.
     func prepare() async {
         guard !isEngineStarted else { return }
 
@@ -228,8 +248,8 @@ final class AudioRecorder: NSObject, ObservableObject {
         // Engine might not be running yet (cold start before prepare()
         // completed). Start it; the user expects no latency on first
         // press.
-        if !isEngineStarted {
-            Task { await self.prepare() }
+        guard isEngineStarted, inputFormat != nil else {
+            throw RecorderError.engineNotReady
         }
 
         // Open output file (16kHz mono Int16 PCM WAV).
@@ -251,6 +271,7 @@ final class AudioRecorder: NSObject, ObservableObject {
         let inputRate = inputSampleRate
 
         // Open the file + write pre-roll synchronously, all on fileQueue.
+        var openFailure: Error?
         fileQueue.sync {
             do {
                 self.audioFile = try AVAudioFile(
@@ -259,27 +280,37 @@ final class AudioRecorder: NSObject, ObservableObject {
                     commonFormat: .pcmFormatFloat32,
                     interleaved: false
                 )
-                if let inputFormat = self.inputFormat {
-                    let outFormat = AVAudioFormat(
+                guard let inputFormat = self.inputFormat,
+                      let outFormat = AVAudioFormat(
                         commonFormat: .pcmFormatFloat32,
                         sampleRate: 16_000,
                         channels: 1,
                         interleaved: false
-                    )!
-                    self.converter = AVAudioConverter(from: inputFormat, to: outFormat)
+                      ),
+                      let converter = AVAudioConverter(from: inputFormat, to: outFormat)
+                else {
+                    throw RecorderError.converterUnavailable
                 }
+                self.converter = converter
                 if !preRoll.isEmpty {
                     self.writeSamplesToFileOnQueue(samples: preRoll, sampleRate: inputRate)
                 }
             } catch {
                 NSLog("MyWhi.AudioRecorder: AVAudioFile open failed: \(error)")
+                self.audioFile = nil
+                self.converter = nil
+                openFailure = RecorderError.outputOpenFailed(url, error)
             }
+        }
+        if let openFailure {
+            throw openFailure
         }
 
         // Mark recording active. The next tap callback will start
         // pushing samples into the file.
         recordingLock.withLock { isRecordingFlag = true }
         recordStartedAt = Date()
+        currentRecordingURL = url
         currentLevel = 0
     }
 
@@ -298,7 +329,15 @@ final class AudioRecorder: NSObject, ObservableObject {
         // Find the last file we wrote. We don't track the URL on
         // audioFile directly (it lives on the file queue), so we derive
         // it from the timestamp.
-        let url = mostRecentRecordingURL()
+        guard let url = currentRecordingURL ?? mostRecentRecordingURL(),
+              FileManager.default.fileExists(atPath: url.path)
+        else {
+            recordStartedAt = nil
+            currentRecordingURL = nil
+            currentLevel = 0
+            dropBufferPool()
+            throw RecorderError.missingRecordingFile
+        }
         let dur: TimeInterval
         if let started = recordStartedAt {
             dur = Date().timeIntervalSince(started)
@@ -308,11 +347,12 @@ final class AudioRecorder: NSObject, ObservableObject {
         lastRecordingDuration = dur
         lastRecordingURL = url
         recordStartedAt = nil
+        currentRecordingURL = nil
         currentLevel = 0
         // Phase 12: drop the buffer pool so the next recording starts
         // with a fresh allocation.
         dropBufferPool()
-        return url ?? lastRecordingURL ?? URL(fileURLWithPath: "/tmp/mywhi/recordings/")
+        return url
     }
 
     /// Cancel an in-flight recording and delete the .wav file.
@@ -322,11 +362,12 @@ final class AudioRecorder: NSObject, ObservableObject {
             self.audioFile = nil
             self.converter = nil
         }
-        if let url = mostRecentRecordingURL() {
+        if let url = currentRecordingURL ?? mostRecentRecordingURL() {
             try? FileManager.default.removeItem(at: url)
             NSLog("MyWhi.AudioRecorder: cancelled and removed \(url.lastPathComponent)")
         }
         recordStartedAt = nil
+        currentRecordingURL = nil
         lastRecordingURL = nil
         lastRecordingDuration = 0
         currentLevel = 0

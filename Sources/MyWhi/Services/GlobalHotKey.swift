@@ -32,6 +32,10 @@ final class GlobalHotKey {
     /// Currently-registered hot key reference. nil if not registered.
     private var hotKeyRef: EventHotKeyRef?
 
+    /// Carbon event handler installed once for this manager. Re-registering
+    /// the hotkey must not stack duplicate handlers.
+    private var eventHandlerRef: EventHandlerRef?
+
     /// Callback fired when the hot key is pressed.
     private var onPress: (() -> Void)?
 
@@ -80,51 +84,14 @@ final class GlobalHotKey {
     /// with new values if already registered. Unregisters any prior
     /// registration first.
     func register(modifiers: UInt32, keyCode: UInt32, onPress: @escaping () -> Void) {
-        unregister()
+        unregisterHotKey()
+        removeReleaseMonitor()
 
         self.onPress = onPress
         self.currentModifiers = modifiers
         self.currentKeyCode = keyCode
 
-        // Install the Carbon event handler (only once).
-        let handler: EventHandlerUPP = { _, eventRef, _ in
-            guard let eventRef else { return OSStatus(eventNotHandledErr) }
-            var hotKeyID = EventHotKeyID()
-            let status = GetEventParameter(
-                eventRef,
-                EventParamName(kEventParamDirectObject),
-                EventParamType(typeEventHotKeyID),
-                nil,
-                MemoryLayout<EventHotKeyID>.size,
-                nil,
-                &hotKeyID
-            )
-            guard status == noErr else { return status }
-
-            DispatchQueue.main.async {
-                NotificationCenter.default.post(name: .mywhiHotKeyPressed, object: nil)
-            }
-            return noErr
-        }
-
-        var eventType = EventTypeSpec(
-            eventClass: OSType(kEventClassKeyboard),
-            eventKind: UInt32(kEventHotKeyPressed)
-        )
-
-        let installStatus = InstallEventHandler(
-            GetEventDispatcherTarget(),
-            handler,
-            1,
-            &eventType,
-            nil,
-            nil
-        )
-
-        guard installStatus == noErr else {
-            NSLog("MyWhi.GlobalHotKey: InstallEventHandler failed (\(installStatus))")
-            return
-        }
+        guard installEventHandlerIfNeeded() else { return }
 
         let hotKeyID = EventHotKeyID(signature: OSType(GlobalHotKey.hotKeyID), id: 1)
         let regStatus = RegisterEventHotKey(
@@ -159,13 +126,71 @@ final class GlobalHotKey {
     }
 
     func unregister() {
+        unregisterHotKey()
+        if let eventHandlerRef {
+            RemoveEventHandler(eventHandlerRef)
+            self.eventHandlerRef = nil
+        }
+        onPress = nil
+        onRelease = nil
+        pushToTalkEnabled = false
+        removeReleaseMonitor()
+    }
+
+    private func unregisterHotKey() {
         if let hotKeyRef {
             UnregisterEventHotKey(hotKeyRef)
             self.hotKeyRef = nil
         }
-        onPress = nil
-        onRelease = nil
-        removeReleaseMonitor()
+    }
+
+    private func installEventHandlerIfNeeded() -> Bool {
+        if eventHandlerRef != nil { return true }
+
+        let handler: EventHandlerUPP = { _, eventRef, _ in
+            guard let eventRef else { return OSStatus(eventNotHandledErr) }
+            var hotKeyID = EventHotKeyID()
+            let status = GetEventParameter(
+                eventRef,
+                EventParamName(kEventParamDirectObject),
+                EventParamType(typeEventHotKeyID),
+                nil,
+                MemoryLayout<EventHotKeyID>.size,
+                nil,
+                &hotKeyID
+            )
+            guard status == noErr else { return status }
+            guard hotKeyID.signature == OSType(GlobalHotKey.hotKeyID) else {
+                return OSStatus(eventNotHandledErr)
+            }
+
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .mywhiHotKeyPressed, object: nil)
+            }
+            return noErr
+        }
+
+        var eventType = EventTypeSpec(
+            eventClass: OSType(kEventClassKeyboard),
+            eventKind: UInt32(kEventHotKeyPressed)
+        )
+
+        var installedHandler: EventHandlerRef?
+        let installStatus = InstallEventHandler(
+            GetEventDispatcherTarget(),
+            handler,
+            1,
+            &eventType,
+            nil,
+            &installedHandler
+        )
+
+        guard installStatus == noErr, let installedHandler else {
+            NSLog("MyWhi.GlobalHotKey: InstallEventHandler failed (\(installStatus))")
+            return false
+        }
+        eventHandlerRef = installedHandler
+        return true
     }
 
     // MARK: - Push-to-talk (Phase 13)

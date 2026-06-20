@@ -23,7 +23,7 @@
 // complete file. LiveTranscriber is only for the partial view.
 
 import Foundation
-import AVFoundation
+@preconcurrency import AVFoundation
 
 @MainActor
 final class LiveTranscriber {

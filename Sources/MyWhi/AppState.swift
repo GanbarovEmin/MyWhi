@@ -91,6 +91,7 @@ final class AppState: ObservableObject {
                 self?.settings.save()
             }
             .store(in: &cancellables)
+        settings.save()
 
         // Pre-load the engine in the background so the first recording is fast.
         // We seed preloadTask up front so that ensureEngineLoaded() called
@@ -203,6 +204,7 @@ final class AppState: ObservableObject {
                 return
             }
             do {
+                await self.recorder.prepare()
                 try self.recorder.start()
                 self.status = .recording
                 self.livePartialTranscript = ""
@@ -400,6 +402,11 @@ final class AppState: ObservableObject {
         clipboard.copy(entry.text)
         lastTranscript = entry.text
         status = .copied
+    }
+
+    func returnToIdleIfCopied() {
+        guard status == .copied else { return }
+        status = .idle
     }
 
     func clearHistory() {

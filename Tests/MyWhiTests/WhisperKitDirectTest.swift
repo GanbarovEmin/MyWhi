@@ -24,6 +24,71 @@ final class WhisperKitDirectTest: XCTestCase {
     ///   afconvert /tmp/mywhi-punct.aiff /tmp/mywhi-punct.wav -f WAVE -d LEI16@16000
     private let englishAudioPath = "/tmp/mywhi-punct.wav"
 
+    private func ensureFixture(
+        at path: String,
+        text: String,
+        preferredVoice: String? = nil
+    ) throws {
+        let fm = FileManager.default
+        if fm.fileExists(atPath: path),
+           ((try? fm.attributesOfItem(atPath: path)[.size] as? NSNumber)?.intValue ?? 0) > 44 {
+            return
+        }
+
+        let sayURL = URL(fileURLWithPath: "/usr/bin/say")
+        let afconvertURL = URL(fileURLWithPath: "/usr/bin/afconvert")
+        guard fm.isExecutableFile(atPath: sayURL.path),
+              fm.isExecutableFile(atPath: afconvertURL.path)
+        else {
+            throw XCTSkip("Missing audio fixture \(path), and say/afconvert are not available to generate it.")
+        }
+
+        let voice = try availableVoice(named: preferredVoice)
+        let aiffURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("aiff")
+        defer { try? fm.removeItem(at: aiffURL) }
+
+        var sayArgs: [String] = []
+        if let voice {
+            sayArgs.append(contentsOf: ["-v", voice])
+        } else if preferredVoice != nil {
+            throw XCTSkip("Missing audio fixture \(path), and preferred voice \(preferredVoice!) is not installed.")
+        }
+        sayArgs.append(contentsOf: ["-o", aiffURL.path, text])
+        try runProcess(sayURL, arguments: sayArgs)
+        try runProcess(
+            afconvertURL,
+            arguments: [aiffURL.path, path, "-f", "WAVE", "-d", "LEI16@16000"]
+        )
+    }
+
+    private func availableVoice(named preferredVoice: String?) throws -> String? {
+        guard let preferredVoice else { return nil }
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/say")
+        task.arguments = ["-v", "?"]
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        try task.run()
+        task.waitUntilExit()
+        let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        return output
+            .split(separator: "\n")
+            .contains { $0.hasPrefix(preferredVoice + " ") } ? preferredVoice : nil
+    }
+
+    private func runProcess(_ executableURL: URL, arguments: [String]) throws {
+        let task = Process()
+        task.executableURL = executableURL
+        task.arguments = arguments
+        try task.run()
+        task.waitUntilExit()
+        guard task.terminationStatus == 0 else {
+            throw XCTSkip("\(executableURL.lastPathComponent) failed while generating audio fixture.")
+        }
+    }
+
     private func loadModel(_ modelName: String) async throws -> WhisperKit {
         let config = WhisperKitConfig(
             model: modelName,
@@ -74,6 +139,12 @@ final class WhisperKitDirectTest: XCTestCase {
             "Direct WhisperKit integration test downloads/loads real models. Set MYWHI_RUN_WHISPERKIT_DIRECT=1 to run it."
         )
 
+        try ensureFixture(
+            at: russianAudioPath,
+            text: "Привет, это тестовая запись для проверки транскрибации WhisperKit на маке.",
+            preferredVoice: "Milena"
+        )
+
         let pipe = try await loadModel("medium")
         let text = await transcribe(pipe: pipe, audioPath: russianAudioPath, language: "ru")
         print("[Test] Russian transcription: \(text)")
@@ -92,6 +163,12 @@ final class WhisperKitDirectTest: XCTestCase {
         try XCTSkipUnless(
             ProcessInfo.processInfo.environment["MYWHI_RUN_WHISPERKIT_DIRECT"] == "1",
             "Direct WhisperKit integration test downloads/loads real models. Set MYWHI_RUN_WHISPERKIT_DIRECT=1 to run it."
+        )
+
+        try ensureFixture(
+            at: englishAudioPath,
+            text: "Hello, world! How are you? I am fine. Thanks - really.",
+            preferredVoice: "Samantha"
         )
 
         let pipe = try await loadModel("medium")
