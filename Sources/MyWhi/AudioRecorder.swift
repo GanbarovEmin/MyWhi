@@ -79,6 +79,18 @@ final class AudioRecorder: NSObject, ObservableObject {
     private(set) var lastRecordingURL: URL?
     private(set) var lastRecordingDuration: TimeInterval = 0
 
+    /// Phase 22: tracks whether the most recent file write succeeded.
+    /// The UI can observe this and surface a persistent warning so the
+    /// user knows their recording may be truncated (disk full, file
+    /// queue blocked, etc.) and can stop early to avoid data loss.
+    ///
+    /// We mirror this with a `nonisolated(unsafe)` flag that the
+    /// audio file queue can flip without hopping to the main actor
+    /// for every tap (12 taps/sec). The published value is updated
+    /// only on state transitions, not on every tap.
+    @Published private(set) var isWriteFailing: Bool = false
+    nonisolated(unsafe) private var hasWriteFailure: Bool = false
+
     /// Cached RMS — the audio thread writes this every buffer (~85ms
     /// at 48kHz/4096). The SwiftUI waveform redraws on each tick.
     private nonisolated let levelLock = NSLock()
@@ -474,8 +486,30 @@ final class AudioRecorder: NSObject, ObservableObject {
         do {
             try file.write(from: outBuffer)
             fileWriteCompletedCount += 1
+            // Phase 22: clear the failure flag on every successful
+            // write. A single successful write is enough evidence the
+            // pipeline is healthy again. We use the lock-free
+            // `hasWriteFailure` flag (touched from the file queue)
+            // and only hop to the main actor on a state transition
+            // — once per failure event, not once per tap.
+            if hasWriteFailure {
+                hasWriteFailure = false
+                Task { @MainActor in
+                    self.isWriteFailing = false
+                }
+            }
         } catch {
             NSLog("MyWhi.AudioRecorder: file.write failed: \(error)")
+            // Phase 22: surface write failures so the UI can warn the
+            // user before they lose data. The error is logged once;
+            // the @Published flag stays true until a subsequent
+            // successful write flips it back to false.
+            if !hasWriteFailure {
+                hasWriteFailure = true
+                Task { @MainActor in
+                    self.isWriteFailing = true
+                }
+            }
         }
     }
 

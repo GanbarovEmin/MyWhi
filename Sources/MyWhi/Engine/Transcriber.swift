@@ -19,4 +19,17 @@ protocol Transcriber: AnyObject, Sendable {
     /// Run transcription on a local audio file. Returns the full text.
     /// `language` is "ru"/"en"/"auto" (auto = let model detect).
     func transcribe(audioPath: String, model: String, language: String) async throws -> String
+
+    /// Phase 22: explicit teardown of the loaded model. Optional —
+    /// default implementation is a no-op (for transcriber types that
+    /// don't need cleanup, e.g. one-shot Python subprocesses). Real
+    /// implementations should nil out any heavy references so the
+    /// next `loadModel` doesn't leak the previous model's memory.
+    func unloadModel()
+}
+
+extension Transcriber {
+    /// Default no-op for back-compat. WhisperKitTranscriber overrides
+    /// to actually release Core ML / Metal model objects.
+    func unloadModel() {}
 }

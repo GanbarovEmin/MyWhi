@@ -16,6 +16,11 @@ final class FakeTranscriber: Transcriber, @unchecked Sendable {
     var transcribeError: Error?
     var lastModelRequested: String?
     var transcribeCount: Int = 0
+    /// Phase 22: how many times unloadModel was called. The real
+    /// WhisperKitTranscriber nil's out its `pipe` and model cache;
+    /// we mirror that here so EngineManager-level reload tests can
+    /// assert the unload was called before the new model was loaded.
+    var unloadCount: Int = 0
 
     init(name: String) { self.name = name }
 
@@ -23,6 +28,13 @@ final class FakeTranscriber: Transcriber, @unchecked Sendable {
         loadCount += 1
         lastModelRequested = modelName
         if let loadError { throw loadError }
+    }
+
+    /// Phase 22: explicit teardown. The real implementation nils out
+    /// pipe / loadedModelName / prompt-token caches. The fake just
+    /// bumps a counter so tests can verify it was called.
+    func unloadModel() {
+        unloadCount += 1
     }
 
     func transcribe(audioPath: String, model: String, language: String) async throws -> String {
@@ -112,5 +124,30 @@ final class EngineManagerTests: XCTestCase {
         let text = try await mgr.transcribe(audioPath: "/tmp/fake.wav", model: "small", language: "ru")
         XCTAssertEqual(text, "fake-transcript-whisperkit-small")
         XCTAssertEqual(fakes["whisperkit"]!.transcribeCount, 1)
+    }
+
+    // MARK: - Phase 22: unload on model change
+
+    /// Switching from one model to another must unload the previous
+    /// engine's model before loading the new one. This is the
+    /// memory-leak fix: without it, switching small→medium→small
+    /// accumulates Core ML model objects and eventually trips
+    /// EXC_RESOURCE.
+    func testSetEngineUnloadsPreviousModel() async throws {
+        let (mgr, fakes) = makeManager()
+        // First load — no unload expected (cache was empty stub).
+        try await mgr.setEngine("whisperkit", model: "small")
+        XCTAssertEqual(fakes["whisperkit"]!.unloadCount, 0,
+                       "First load should not call unload — there's nothing to unload yet")
+
+        // Same model — cache hit, no unload.
+        try await mgr.setEngine("whisperkit", model: "small")
+        XCTAssertEqual(fakes["whisperkit"]!.unloadCount, 0,
+                       "Cache hit should not call unload")
+
+        // Different model — must unload first.
+        try await mgr.setEngine("whisperkit", model: "medium")
+        XCTAssertEqual(fakes["whisperkit"]!.unloadCount, 1,
+                       "Model change must call unloadModel() on the outgoing engine")
     }
 }

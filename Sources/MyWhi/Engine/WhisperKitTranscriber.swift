@@ -78,16 +78,50 @@ final class WhisperKitTranscriber: Transcriber, @unchecked Sendable {
         let resolved = resolveModelVariant(modelName)
         NSLog("MyWhi.WhisperKitTranscriber: loadModel(\(modelName) → \(resolved)) starting")
 
+        // Phase 22: unload the previous model before loading a new one.
+        // WhisperKit holds onto Core ML/Metal model objects in `pipe`
+        // (each is ~50MB-1.5GB). Without explicit teardown, switching
+        // from `small` to `medium` and back leaks the prior model's
+        // memory until the process exits. We nil out everything we can
+        // reach before allocating the new pipeline.
+        unloadModel()
+
         let config = makeConfig(resolved)
         do {
             let newPipe = try await WhisperKit(config)
             NSLog("MyWhi.WhisperKitTranscriber: WhisperKit() init succeeded for \(resolved)")
             self.pipe = newPipe
             self.loadedModelName = resolved
+            // Reset prompt-token cache: token IDs are model-specific.
+            // The next transcribe() call will lazily re-tokenize for
+            // the new model's BPE vocab.
+            self.cachedPromptTokens = nil
+            self.cachedPromptLanguage = nil
         } catch {
             NSLog("MyWhi.WhisperKitTranscriber: WhisperKit() init FAILED for \(resolved): \(error)")
             throw error
         }
+    }
+
+    /// Phase 22: explicit teardown of the loaded model. Called from
+    /// `loadModel()` before swapping to a different model, and exposed
+    /// publicly so callers (or tests) can force a clean slate. After
+    /// this call `pipe == nil` and `loadedModelName == nil`; the next
+    /// `transcribe()` will trigger a fresh `loadModel()`.
+    ///
+    /// WhisperKit doesn't expose a formal `unload()` API, so we nil
+    /// out our reference and let ARC release the underlying Core ML
+    /// models. Swift's ARC is sufficient here because the heavy
+    /// resources (compiled models, Metal buffers) are owned by the
+    /// `WhisperKit` instance; once we drop our strong reference,
+    /// they get deallocated in the next runloop.
+    func unloadModel() {
+        guard pipe != nil else { return }
+        NSLog("MyWhi.WhisperKitTranscriber: unloadModel() — releasing \(loadedModelName ?? "<unknown>")")
+        pipe = nil
+        loadedModelName = nil
+        cachedPromptTokens = nil
+        cachedPromptLanguage = nil
     }
 
     func transcribe(audioPath: String, model: String, language: String) async throws -> String {
@@ -248,6 +282,13 @@ final class WhisperKitTranscriber: Transcriber, @unchecked Sendable {
         // If we already tokenized for this language, return the cache.
         if cachedPromptLanguage == language, let tokens = cachedPromptTokens {
             return tokens
+        }
+        // Phase 22: re-tokenize on language change. Catches the case
+        // where the user is mid-session and switches the language
+        // toggle in Settings (or where the auto-detect mode drifts
+        // from English to Russian between recordings).
+        if cachedPromptLanguage != nil && cachedPromptLanguage != language {
+            NSLog("MyWhi.WhisperKitTranscriber: language changed \(cachedPromptLanguage ?? "<nil>") → \(language); re-tokenizing prompt")
         }
         // Tokenize. Requires WhisperKit + tokenizer to be initialized.
         guard let tokenizer = pipe?.tokenizer else { return nil }

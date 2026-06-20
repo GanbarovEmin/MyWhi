@@ -88,6 +88,19 @@ final class EngineManager: ObservableObject {
             )
         }
 
+        // Phase 22: unload the previous engine's model before the new
+        // one is created. We do this on the *outgoing* engine (not the
+        // incoming one) so the new engine's loadModel() can take its
+        // time without us holding a heavy Core ML/Metal pipeline
+        // alongside it. WhisperKitTranscriber overrides unloadModel()
+        // to nil out its `pipe`; other backends get the protocol
+        // default no-op.
+        if let outgoing = self.active as? WhisperKitTranscriber {
+            outgoing.unloadModel()
+        } else {
+            self.active.unloadModel()
+        }
+
         // Phase 17: hand the new engine the live AppSettings reference
         // so it can read voice-commands / future per-engine settings.
         if let whisper = newEngine as? WhisperKitTranscriber, let settings = appSettings {
