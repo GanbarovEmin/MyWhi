@@ -402,4 +402,13 @@ final class AppState: ObservableObject {
         guard !trimmed.isEmpty else { return }
         lastTranscript = trimmed
     }
+
+    /// Phase 18: set the live-decoding indicator. Called by
+    /// `LiveTranscriber.runOnce` around each WhisperKit decode so
+    /// the UI can show a "транскрибирую…" pulse while the engine
+    /// works. Routing through a dedicated method preserves the
+    /// `private(set)` invariant on `isLiveDecoding`.
+    func setIsLiveDecoding(_ value: Bool) {
+        isLiveDecoding = value
+    }
 }

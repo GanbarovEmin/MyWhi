@@ -130,6 +130,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .sink { [weak self] status in
                 self?.refreshIcon(for: status)
                 self?.updateFloatingHUD(for: status)
+                // Phase 18: surface the recording state on the Dock
+                // tile so users with MyWhi in the Dock can see the
+                // state at a glance — even when the popover/HUD are
+                // hidden behind another app. The dockTile only renders
+                // when the app is in .regular activation policy
+                // (desktop mode); in .accessory mode there's no tile
+                // to badge, which is the correct behavior.
+                self?.refreshDockBadge(for: status)
             }
             .store(in: &cancellables)
 
@@ -305,5 +313,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ) else { return }
         img.isTemplate = true
         button.image = img
+    }
+
+    // MARK: - Dock badge (Phase 18)
+
+    /// Update the Dock tile's badge label to reflect the current
+    /// recording state. The Dock tile is only visible when MyWhi is
+    /// in `.regular` activation policy (desktop mode), so this is a
+    /// no-op in `.accessory` mode.
+    private func refreshDockBadge(for status: AppStatus) {
+        switch status {
+        case .recording, .transcribing:
+            // Use a red dot — universally recognized as "live" /
+            // "active". String is short to fit on the Dock tile.
+            NSApp.dockTile.badgeLabel = "●"
+        case .error:
+            NSApp.dockTile.badgeLabel = "!"
+        default:
+            NSApp.dockTile.badgeLabel = nil
+        }
+        NSApp.dockTile.display()
     }
 }

@@ -40,6 +40,20 @@ struct FloatingVoiceHUDView: View {
                             // of the abrupt string swap.
                             .contentTransition(.opacity)
                             .transition(.opacity)
+                    } else if appState.isLiveDecoding {
+                        // Phase 18: the user has spoken enough to
+                        // trigger a decode but WhisperKit is still
+                        // working on this tick. Show a soft pulsing
+                        // indicator so they know something is
+                        // happening (vs the silent default).
+                        HStack(spacing: HDSpacing.xs.rawValue) {
+                            Text("транскрибирую…")
+                                .font(HDFont.hudLiveText)
+                                .foregroundStyle(theme.muted)
+                            ProgressView()
+                                .controlSize(.small)
+                                .scaleEffect(0.7)
+                        }
                     } else {
                         HDWaveformView(
                             level: appState.recorderLevel,

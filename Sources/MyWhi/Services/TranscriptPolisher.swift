@@ -45,11 +45,14 @@ actor PersonalDictionaryStore {
 enum TranscriptPolisher {
 
     static func polish(_ raw: String, dictionary: [DictionaryReplacement] = []) -> String {
-        var text = raw
-            .replacingOccurrences(of: "\u{FEFF}", with: "")
-            .replacingOccurrences(of: "<|endoftext|>", with: "")
-            .replacingOccurrences(of: "[BLANK_AUDIO]", with: "", options: .caseInsensitive)
-            .replacingOccurrences(of: "[MUSIC]", with: "", options: .caseInsensitive)
+        // Strip BOM (UTF-8 byte-order mark) that some upstream tools
+        // emit at the start of files.
+        var text = raw.replacingOccurrences(of: "\u{FEFF}", with: "")
+
+        // WhisperKit's "[BLANK_AUDIO]" / "[MUSIC]" markers — these are
+        // model-side annotations, not user speech.
+        text = text.replacingOccurrences(of: "[BLANK_AUDIO]", with: "", options: .caseInsensitive)
+        text = text.replacingOccurrences(of: "[MUSIC]", with: "", options: .caseInsensitive)
 
         text = normalizeWhitespace(text)
         text = normalizePunctuationSpacing(text)

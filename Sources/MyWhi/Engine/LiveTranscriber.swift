@@ -99,7 +99,7 @@ final class LiveTranscriber {
         model: String,
         language: String,
         windowSeconds: Double,
-        onPartial: (String) -> Void
+        onPartial: @escaping (String) -> Void
     ) async {
         // Phase 14: sliding window. With windowSeconds=0 we'd decode
         // the whole buffer (Phase 8 behavior, kept for tests); with
@@ -116,6 +116,19 @@ final class LiveTranscriber {
         }
         defer {
             try? FileManager.default.removeItem(at: url)
+        }
+
+        // Phase 18: signal "decode in flight" so the UI can show
+        // a "transcribing..." indicator while WhisperKit works.
+        // Set true, do the decode, set false in defer so we
+        // always clean up even on throws.
+        await MainActor.run { [weak appState] in
+            appState?.setIsLiveDecoding(true)
+        }
+        defer {
+            Task { @MainActor [weak appState] in
+                appState?.setIsLiveDecoding(false)
+            }
         }
 
         do {

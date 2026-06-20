@@ -152,6 +152,15 @@ struct HomeView: View {
                         // this just makes the visual handoff smooth).
                         .contentTransition(.opacity)
                         .transition(.opacity)
+                } else if appState.isLiveDecoding {
+                    // Phase 18: silent decode-in-flight indicator.
+                    HStack(spacing: HDSpacing.xs.rawValue) {
+                        Text("транскрибирую…")
+                            .font(HDFont.bodyLarge)
+                            .foregroundStyle(theme.muted)
+                        ProgressView()
+                            .controlSize(.small)
+                    }
                 }
             }
 
