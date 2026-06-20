@@ -6,11 +6,15 @@ import XCTest
 
 final class HUDPositionTests: XCTestCase {
 
-    /// Phase 15: default value must be `.top` for back-compat with
-    /// existing users who were used to the panel being near the menu bar.
-    func testDefaultHUDPositionIsTop() {
+    /// Phase 15 / 20: default value was .top originally (back-compat for
+    /// users used to the panel being near the menu bar). Phase 20
+    /// flipped the default to .bottom (Wispr Flow convention); the
+    /// decoder still falls back to .top for legacy settings.json
+    /// without the key. So the *runtime* default is .bottom for new
+    /// users, and .top for upgrades.
+    func testDefaultHUDPositionIsBottom() {
         let settings = AppSettings()
-        XCTAssertEqual(settings.hudPosition, .top)
+        XCTAssertEqual(settings.hudPosition, .bottom)
     }
 
     /// Phase 15: round-trip — set bottom, encode, decode, must stay bottom.

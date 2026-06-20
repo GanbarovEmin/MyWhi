@@ -161,6 +161,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
             .store(in: &cancellables)
+
+        // Phase 20: surface errors via a small floating toast. We do
+        // this at the AppDelegate level (not in any view) so the toast
+        // appears even when the menu-bar popover is closed. We skip
+        // empty / cleared messages and only show non-empty ones.
+        appState.$errorMessage
+            .receive(on: RunLoop.main)
+            .removeDuplicates()
+            .sink { message in
+                let trimmed = (message ?? "")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty {
+                    ErrorToastController.shared.show(trimmed)
+                }
+            }
+            .store(in: &cancellables)
     }
 
     private func handleDesktopActivation() {
@@ -194,12 +210,61 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(withTitle: "About MyWhi", action: #selector(about), keyEquivalent: "")
         menu.addItem(withTitle: "Open MyWhi", action: #selector(openDesktop), keyEquivalent: "")
         menu.addItem(withTitle: "Open Design Preview", action: #selector(openDesignPreview), keyEquivalent: "")
+
+        // Phase 20: Recent transcripts submenu. Power-user shortcut for
+        // re-copying something from a few minutes ago without opening
+        // the desktop app. We rebuild the submenu on every right-click
+        // so it reflects the latest `statsObserver.notes`.
+        let recent = NSMenuItem()
+        recent.title = "Recent transcripts"
+        recent.submenu = buildRecentTranscriptsMenu()
+        // Disabled title-like item — submenu doesn't show on its own.
+        if recent.submenu?.items.isEmpty == true {
+            recent.isEnabled = false
+        }
+        menu.addItem(recent)
+
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit MyWhi", action: #selector(quit), keyEquivalent: "q")
         menu.items.forEach { $0.target = self }
         statusItem.menu = menu
         button.performClick(nil)
         statusItem.menu = nil
+    }
+
+    /// Build the "Recent transcripts" submenu with the 5 most recent
+    /// notes. Click → copy + close menu. We rebuild on every right-click
+    /// so the list is always fresh.
+    private func buildRecentTranscriptsMenu() -> NSMenu {
+        let submenu = NSMenu()
+        let notes = MainActor.assumeIsolated { appState.statsObserver.notes }
+        if notes.isEmpty {
+            let empty = NSMenuItem(title: "Нет записей", action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            submenu.addItem(empty)
+            return submenu
+        }
+        for note in notes.prefix(5) {
+            let prefix = note.title.prefix(40)
+            let title = prefix.count < note.title.count
+                ? "\(prefix)…"
+                : String(prefix)
+            let item = NSMenuItem(
+                title: title,
+                action: #selector(copyRecentTranscript(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = note.body
+            submenu.addItem(item)
+        }
+        return submenu
+    }
+
+    @objc private func copyRecentTranscript(_ sender: NSMenuItem) {
+        guard let body = sender.representedObject as? String else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(body, forType: .string)
     }
 
     @objc private func about() {

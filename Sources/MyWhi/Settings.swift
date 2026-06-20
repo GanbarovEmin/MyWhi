@@ -68,8 +68,11 @@ final class AppSettings: ObservableObject, Codable {
     // MARK: Floating HUD position (Phase 15)
 
     /// Where to anchor the floating HUD panel. Wispr Flow uses bottom
-    /// (near the cursor); MyWhi defaults to top (legacy). Power users
-    /// can flip this from the menu bar right-click.
+    /// (near the cursor). Phase 20 flipped the default from .top
+    /// (legacy MyWhi convention) to .bottom (Wispr Flow convention).
+    /// Users who already had settings.json with hudPosition set are
+    /// unaffected (the decoder uses .top as a fallback only when the
+    /// key is missing or invalid).
     enum HUDPosition: String, Codable {
         case top, bottom
     }
@@ -115,7 +118,7 @@ final class AppSettings: ObservableObject, Codable {
         soundFeedbackEnabled: Bool = true,
         inlineEditorMode: Bool = false,
         pushToTalkMode: Bool = false,
-        hudPosition: HUDPosition = .top,
+        hudPosition: HUDPosition = .bottom,
         voiceCommandsEnabled: Bool = true
     ) {
         // Validate inputs against known values; fall back to defaults so

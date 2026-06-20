@@ -72,6 +72,9 @@ enum HDFont {
     /// 13pt regular — for the HUD live partial transcript (Phase 8).
     static let hudLiveText = Font.system(size: 13, weight: .regular, design: .default)
 
+    /// 13pt medium — for the error toast message (Phase 20).
+    static let errorToast = Font.system(size: 13, weight: .medium, design: .default)
+
     /// 12pt medium — for filter chip buttons (Phase 10).
     static let filterChip = Font.system(size: 12, weight: .medium, design: .default)
 

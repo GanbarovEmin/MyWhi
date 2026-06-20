@@ -257,11 +257,11 @@ struct SettingsViewDesktop: View {
                         .font(HDFont.formLabel)
                         .foregroundStyle(theme.ink)
                     Picker("", selection: hudPositionBinding) {
-                        Text("Сверху (по умолчанию)").tag(AppSettings.HUDPosition.top)
-                        Text("Снизу (Wispr Flow)").tag(AppSettings.HUDPosition.bottom)
+                        Text("Снизу (Wispr Flow, по умолчанию)").tag(AppSettings.HUDPosition.bottom)
+                        Text("Сверху (legacy)").tag(AppSettings.HUDPosition.top)
                     }
                     .pickerStyle(.menu)
-                    .frame(maxWidth: 240)
+                    .frame(maxWidth: 320)
                     Spacer()
                 }
                 .help("Где показывать плавающее окно во время записи.")
