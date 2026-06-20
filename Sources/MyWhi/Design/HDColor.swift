@@ -119,11 +119,11 @@ enum HDColor {
     // For full dark mode, the user can toggle HDColor.useDarkMode in
     // Settings (Phase 3.5). For now we just expose the dark tokens.
 
-    static let darkCanvas     = Color(hex: "#131316")  // near-black bg
+    static let darkCanvas     = Color(hex: "#0e0e10")  // deeper near-black bg (Phase 21)
     static let darkInk        = Color(hex: "#f0f0f4")  // near-white text
-    static let darkMuted      = Color(hex: "#7a7a85")  // dimmed text
-    static let darkSurface    = Color(hex: "#1d1d22")  // elevated surface
-    static let darkBorder     = Color(hex: "#2a2a30")  // hairline in dark
+    static let darkMuted      = Color(hex: "#8a8a96")  // brighter for WCAG AA (Phase 21)
+    static let darkSurface    = Color(hex: "#1c1c20")  // visibly above canvas (Phase 21)
+    static let darkBorder     = Color(hex: "#2e2e34")  // brighter hairline (Phase 21)
     static let darkDeepGreen  = Color(hex: "#0a5547")  // brighter for dark bg
 }
 

@@ -45,7 +45,23 @@ final class ErrorToastController {
         panel.contentView?.addSubview(host.view)
 
         positionPanel(panel)
+
+        // Phase 21: spring-driven slide-up + fade-in. Replaces the
+        // previous instant .orderFrontRegardless() which popped the
+        // toast in abruptly. The slide distance is small (8pt) so it
+        // feels like a tactile "rise" rather than a screen-to-screen
+        // transition. We animate the hosting view's frame from a
+        // slightly-below position to its natural frame.
+        let target = host.view.frame
+        host.view.frame = target.offsetBy(dx: 0, dy: 8)
+        host.view.alphaValue = 0
         panel.orderFrontRegardless()
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.32
+            ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.22, 1.0, 0.36, 1.0)  // smooth, slight overshoot
+            host.view.animator().frame = target
+            host.view.animator().alphaValue = 1
+        }
 
         // Auto-dismiss after 5 seconds.
         dismissTask?.cancel()
@@ -61,7 +77,19 @@ final class ErrorToastController {
     func dismiss() {
         dismissTask?.cancel()
         dismissTask = nil
-        panel?.orderOut(nil)
+        // Phase 21: matching fade-out so the toast doesn't snap closed.
+        if let panel = panel, let content = panel.contentView {
+            NSAnimationContext.runAnimationGroup({ ctx in
+                ctx.duration = 0.22
+                ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
+                content.animator().alphaValue = 0
+            }, completionHandler: {
+                panel.orderOut(nil)
+                content.animator().alphaValue = 1
+            })
+        } else {
+            panel?.orderOut(nil)
+        }
     }
 
     private func makePanel() -> NSPanel {

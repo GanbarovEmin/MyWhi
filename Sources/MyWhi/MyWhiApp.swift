@@ -324,6 +324,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             panel.isOpaque = false
             panel.backgroundColor = .clear
             panel.hasShadow = false
+            // Phase 21: default to .floating. When we're actively
+            // recording we bump to .statusBar so the HUD stays above
+            // any other floating window the user might have open
+            // (system popovers, third-party HUDs, etc.). For all
+            // other states (transcribing, copied, error) we leave it
+            // at .floating — being intrusive there would be annoying.
             panel.level = .floating
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
             panel.hidesOnDeactivate = false
@@ -335,6 +341,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             )
             floatingHUDPanel = panel
+        }
+
+        // Phase 21: dynamic level boost. Recording is the one state
+        // where the user explicitly needs confirmation that audio is
+        // being captured — make sure they always see the HUD.
+        if let panel = floatingHUDPanel {
+            switch appState.status {
+            case .recording:
+                panel.level = .statusBar
+            default:
+                panel.level = .floating
+            }
         }
 
         positionFloatingHUD()

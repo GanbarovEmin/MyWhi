@@ -101,18 +101,22 @@ extension HDTheme {
     )
 
     /// Dark theme — editorial palette tuned for low-light reading.
+    /// Phase 21 audit pass: deeper canvas, brighter elevated surface
+    /// for visible separation, more legible muted/bodyMuted on dark bg
+    /// (WCAG AA against the canvas). error shifted to a slightly more
+    /// saturated red so it doesn't get lost on dark stone surfaces.
     static let dark = HDTheme(
         // Surfaces
         canvas:           HDColor.darkCanvas,
         surface:          HDColor.darkSurface,
-        surfaceStone:     HDColor.darkSurface,
-        surfacePaleGreen: HDColor.darkDeepGreen.opacity(0.25),
+        surfaceStone:     Color(hex: "#25252a"),  // warm neutral, distinctly above surface
+        surfacePaleGreen: HDColor.darkDeepGreen.opacity(0.30),
         surfacePaleBlue:  Color(hex: "#1a2440"),
         // Text
         ink:              HDColor.darkInk,
         muted:            HDColor.darkMuted,
-        bodyMuted:        Color(hex: "#9a9aa5"),
-        slate:            Color(hex: "#8a8a95"),
+        bodyMuted:        Color(hex: "#a5a5b0"),
+        slate:            Color(hex: "#9595a0"),
         onPrimary:        HDColor.onPrimary,
         onDark:           HDColor.darkInk,
         // Brand — keep accents but tune for dark bg
@@ -122,7 +126,7 @@ extension HDTheme {
         coralSoft:        HDColor.coralSoft,
         actionBlue:       Color(hex: "#5a8af0"),
         focusBlue:        Color(hex: "#6a8af6"),
-        error:            Color(hex: "#ff6b6b"),
+        error:            Color(hex: "#ff5252"),
         // Borders
         border:           HDColor.darkBorder,
         borderLight:      HDColor.darkBorder,

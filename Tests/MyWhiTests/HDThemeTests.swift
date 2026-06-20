@@ -18,12 +18,21 @@ final class HDThemeTests: XCTestCase {
     }
 
     /// Phase 7: dark theme uses the dedicated darkCanvas / darkInk
-    /// tokens rather than the light defaults.
+    /// tokens rather than the light defaults. The theme may apply
+    /// small contrast tweaks (Phase 21) but the core darkCanvas /
+    /// darkInk / darkDeepGreen family must remain the reference.
     func testDarkThemeBasics() {
         let theme = HDTheme.dark
         XCTAssertEqual(theme.canvas.description, HDColor.darkCanvas.description)
         XCTAssertEqual(theme.ink.description, HDColor.darkInk.description)
         XCTAssertEqual(theme.deepGreen.description, HDColor.darkDeepGreen.description)
+        // Phase 21 audit: dark theme surfaces must be visibly
+        // distinct from the canvas so cards/popovers don't blend
+        // into the background.
+        XCTAssertNotEqual(theme.surface.description, theme.canvas.description,
+                          "Dark surface must be distinguishable from canvas")
+        XCTAssertNotEqual(theme.surfaceStone.description, theme.canvas.description,
+                          "Dark surfaceStone must be distinguishable from canvas")
     }
 
     /// Phase 7: semantic aliases should resolve to the same color as
