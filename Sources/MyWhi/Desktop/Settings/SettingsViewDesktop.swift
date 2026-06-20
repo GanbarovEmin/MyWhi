@@ -235,6 +235,14 @@ struct SettingsViewDesktop: View {
                 Toggle("Push-to-talk (hold-to-record)", isOn: pushToTalkBinding)
                     .help("Удерживай горячую клавишу чтобы записать, отпусти чтобы остановить. По умолчанию — toggle.")
 
+                // Phase 23: phantom cursor mode. Toggling this on
+                // makes MyWhi type the dictated text character by
+                // character into the focused app instead of pasting
+                // it as a single Cmd+V. Requires Accessibility
+                // permission (System Settings → Privacy & Security).
+                Toggle("Phantom cursor (ввод посимвольно)", isOn: phantomCursorBinding)
+                    .help("Ввод текста посимвольно прямо в активное приложение — текст появляется где курсор. Требует разрешения Accessibility.")
+
                 HStack(spacing: HDSpacing.sm.rawValue) {
                     Text("Окно live-декода:")
                         .font(HDFont.formLabel)
@@ -294,6 +302,15 @@ struct SettingsViewDesktop: View {
     private var pushToTalkBinding: Binding<Bool> {
         Binding(get: { appState.settings.pushToTalkMode },
                 set: { appState.settings.pushToTalkMode = $0 })
+    }
+
+    /// Phase 23: opt-in toggle for phantom cursor mode. Bound to
+    /// `appState.settings.phantomCursorMode`. When the user flips
+    /// this on, AppState will start typing dictated text into the
+    /// focused app character-by-character instead of pasting it.
+    private var phantomCursorBinding: Binding<Bool> {
+        Binding(get: { appState.settings.phantomCursorMode },
+                set: { appState.settings.phantomCursorMode = $0 })
     }
 
     private var liveWindowBinding: Binding<Int> {

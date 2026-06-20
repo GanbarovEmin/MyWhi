@@ -23,6 +23,13 @@ final class AppSettings: ObservableObject, Codable {
     @Published var autoCopy: Bool                  // copy transcript to clipboard on finish
     @Published var saveHistory: Bool               // save to vault on finish
     @Published var autoPaste: Bool                 // simulate Cmd+V into active app (opt-in, Phase 6.2)
+    /// Phase 23: phantom cursor mode. When enabled (and Accessibility
+    /// permission is granted), dictated text is typed character by
+    /// character into the focused application instead of being
+    /// pasted as a single Cmd+V. This is the Wispr Flow–style "text
+    /// just appears" experience. Falls back to clipboard + Cmd+V if
+    /// the permission is missing.
+    @Published var phantomCursorMode: Bool
     @Published var useDarkMode: Bool               // override system color scheme (Phase 3.5)
 
     // MARK: Hotkey (Phase 6.3)
@@ -110,6 +117,7 @@ final class AppSettings: ObservableObject, Codable {
         autoCopy: Bool = true,
         saveHistory: Bool = true,
         autoPaste: Bool = false,
+        phantomCursorMode: Bool = false,
         useDarkMode: Bool = false,
         hotkeyModifiers: UInt32 = UInt32(cmdKey | optionKey),
         hotkeyKeyCode: UInt32 = 0x02,   // kVK_ANSI_D
@@ -136,6 +144,7 @@ final class AppSettings: ObservableObject, Codable {
         self.autoCopy = autoCopy
         self.saveHistory = saveHistory
         self.autoPaste = autoPaste
+        self.phantomCursorMode = phantomCursorMode
         self.useDarkMode = useDarkMode
         self.hotkeyModifiers = hotkeyModifiers
         self.hotkeyKeyCode = hotkeyKeyCode
@@ -194,7 +203,7 @@ final class AppSettings: ObservableObject, Codable {
         case modelSize, language, autoCopy, saveHistory, autoPaste, useDarkMode,
              hotkeyModifiers, hotkeyKeyCode, liveStreamingEnabled, soundFeedbackEnabled,
              inlineEditorMode, pushToTalkMode, liveWindowSeconds, hudPosition,
-             voiceCommandsEnabled
+             voiceCommandsEnabled, phantomCursorMode
     }
 
     convenience init(from decoder: Decoder) throws {
@@ -210,6 +219,10 @@ final class AppSettings: ObservableObject, Codable {
             autoCopy: try c.decodeIfPresent(Bool.self, forKey: .autoCopy) ?? true,
             saveHistory: try c.decodeIfPresent(Bool.self, forKey: .saveHistory) ?? true,
             autoPaste: try c.decodeIfPresent(Bool.self, forKey: .autoPaste) ?? false,
+            // Phase 23: default OFF. Most users on a non-US keyboard
+            // layout will prefer clipboard+paste; phantom cursor is
+            // opt-in.
+            phantomCursorMode: try c.decodeIfPresent(Bool.self, forKey: .phantomCursorMode) ?? false,
             useDarkMode: try c.decodeIfPresent(Bool.self, forKey: .useDarkMode) ?? false,
             hotkeyModifiers: try c.decodeIfPresent(UInt32.self, forKey: .hotkeyModifiers)
                 ?? UInt32(cmdKey | optionKey),
@@ -239,6 +252,7 @@ final class AppSettings: ObservableObject, Codable {
         try c.encode(autoCopy, forKey: .autoCopy)
         try c.encode(saveHistory, forKey: .saveHistory)
         try c.encode(autoPaste, forKey: .autoPaste)
+        try c.encode(phantomCursorMode, forKey: .phantomCursorMode)
         try c.encode(useDarkMode, forKey: .useDarkMode)
         try c.encode(hotkeyModifiers, forKey: .hotkeyModifiers)
         try c.encode(hotkeyKeyCode, forKey: .hotkeyKeyCode)

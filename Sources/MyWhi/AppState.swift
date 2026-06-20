@@ -335,8 +335,22 @@ final class AppState: ObservableObject {
                 }
 
                 if autoCopy && !text.isEmpty {
+                    // Phase 23: snapshot the clipboard BEFORE we
+                    // overwrite it, so the user can Cmd+Shift+Z to
+                    // restore. We only snapshot if there's actually
+                    // something to restore (UndoService.snapshot()
+                    // no-ops on empty input).
+                    UndoService.shared.snapshot()
                     self.clipboard.copy(text)
-                    if settings.autoPaste {
+                    // Phase 23: phantom cursor mode. When enabled (and
+                    // Accessibility is granted), type the text
+                    // character-by-character into the focused app
+                    // instead of pasting. This is the Wispr Flow
+                    // "text just appears" experience. Falls back to
+                    // clipboard+Cmd+V if the permission is missing.
+                    if settings.phantomCursorMode && PhantomCursorService.shared.isAccessibilityTrusted() {
+                        PhantomCursorService.shared.typeText(text)
+                    } else if settings.autoPaste {
                         AutoPasteService.pasteFromClipboard()
                     }
                     HapticFeedback.success.fire()

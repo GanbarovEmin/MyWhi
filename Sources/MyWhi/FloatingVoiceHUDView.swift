@@ -28,9 +28,17 @@ struct FloatingVoiceHUDView: View {
 
                 if appState.status == .recording {
                     if !appState.livePartialTranscript.isEmpty {
+                        // Phase 23: while a new partial decode is in
+                        // flight, keep showing the *previous* stable
+                        // partial in a dimmer style. The cross-fade
+                        // arrives once the new text comes back. This
+                        // matches Wispr Flow's "always show *something*
+                        // being typed" feel — the HUD never goes blank
+                        // mid-sentence.
+                        let isDecoding = appState.isLiveDecoding
                         Text(appState.livePartialTranscript)
                             .font(HDFont.hudLiveText)
-                            .foregroundStyle(theme.ink)
+                            .foregroundStyle(isDecoding ? theme.muted : theme.ink)
                             .lineLimit(2)
                             // Phase 16: fade between consecutive partial
                             // decodes. The merge logic in Phase 14
@@ -147,7 +155,15 @@ struct FloatingVoiceHUDView: View {
 
     private var title: String {
         switch appState.status {
-        case .recording:    return "Слушаю"
+        case .recording:
+            // Phase 23: surface the push-to-talk mode so the user knows
+            // whether releasing the hotkey will stop the recording or
+            // whether they need to press again. Prevents accidental
+            // mode-switch confusion.
+            if appState.settings.pushToTalkMode {
+                return "Слушаю (удерживайте)"
+            }
+            return "Слушаю"
         case .transcribing: return "Преобразую речь"
         case .copied:       return "Текст готов"
         case .error:        return "Не получилось"
@@ -160,7 +176,12 @@ struct FloatingVoiceHUDView: View {
         case .transcribing: return "WhisperKit · \(appState.settings.modelSize)"
         case .copied:       return appState.settings.autoPaste ? "Вставлено в активное приложение" : "Скопировано в буфер · ⌘V"
         case .error:        return appState.errorMessage ?? "Проверь разрешения и попробуй снова"
-        default:            return "⌘⌥D — начать запись"
+        default:
+            // Phase 23: hint shows the active hotkey mode.
+            if appState.settings.pushToTalkMode {
+                return "⌘⌥D — удерживайте для записи"
+            }
+            return "⌘⌥D — начать запись"
         }
     }
 }

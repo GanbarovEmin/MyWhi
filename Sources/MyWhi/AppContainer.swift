@@ -136,5 +136,21 @@ final class AppContainer: ObservableObject {
                 self?.globalHotKey.reregister(modifiers: mods, keyCode: key)
             }
         }
+
+        // Phase 23: global Cmd+Shift+Z = undo last paste. Uses
+        // NSEvent.addGlobalMonitorForEvents (same pattern as the
+        // push-to-talk release monitor in GlobalHotKey). Fires
+        // UndoService.undo() which restores the snapshotted
+        // clipboard content. We do this on the main actor since
+        // UndoService is @MainActor.
+        NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { event in
+            // Cmd+Shift+Z — keyCode 6 is 'z' on US layout.
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            let isCmdShift = flags.contains(.command) && flags.contains(.shift)
+            guard isCmdShift, event.keyCode == 6 else { return }
+            Task { @MainActor in
+                _ = UndoService.shared.undo()
+            }
+        }
     }
 }
