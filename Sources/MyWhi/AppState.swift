@@ -64,7 +64,9 @@ final class AppState: ObservableObject {
     init() {
         let loaded = AppSettings.load()
         self.settings = loaded
-        self.engineManager = EngineManager()
+        let em = EngineManager()
+        em.appSettings = loaded   // Phase 17: engine reads voice-commands toggle
+        self.engineManager = em
         self.historyStore = HistoryStore()
         self.clipboard = ClipboardService()
         let vs = VaultStore()

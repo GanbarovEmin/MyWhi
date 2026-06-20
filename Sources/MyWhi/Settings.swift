@@ -75,6 +75,15 @@ final class AppSettings: ObservableObject, Codable {
     }
     @Published var hudPosition: HUDPosition
 
+    // MARK: Voice commands (Phase 17)
+
+    /// When ON, the live transcriber passes a "voice commands" prompt
+    /// to WhisperKit (e.g. "Period. Comma, New line. Question mark?").
+    /// The decoder learns to render those phrases as their punctuation
+    /// characters. Default ON — it's a Wispr Flow parity feature and
+    /// the bias is mild enough that it doesn't hurt regular dictation.
+    @Published var voiceCommandsEnabled: Bool
+
     // MARK: Available values
 
     static let availableModels: [(code: String, label: String, description: String)] = [
@@ -106,7 +115,8 @@ final class AppSettings: ObservableObject, Codable {
         soundFeedbackEnabled: Bool = true,
         inlineEditorMode: Bool = false,
         pushToTalkMode: Bool = false,
-        hudPosition: HUDPosition = .top
+        hudPosition: HUDPosition = .top,
+        voiceCommandsEnabled: Bool = true
     ) {
         // Validate inputs against known values; fall back to defaults so
         // a hand-edited settings file cannot crash the app.
@@ -131,6 +141,7 @@ final class AppSettings: ObservableObject, Codable {
         self.inlineEditorMode = inlineEditorMode
         self.pushToTalkMode = pushToTalkMode
         self.hudPosition = hudPosition
+        self.voiceCommandsEnabled = voiceCommandsEnabled
     }
 
     // MARK: - Persistence
@@ -179,7 +190,8 @@ final class AppSettings: ObservableObject, Codable {
     enum CodingKeys: String, CodingKey {
         case modelSize, language, autoCopy, saveHistory, autoPaste, useDarkMode,
              hotkeyModifiers, hotkeyKeyCode, liveStreamingEnabled, soundFeedbackEnabled,
-             inlineEditorMode, pushToTalkMode, liveWindowSeconds, hudPosition
+             inlineEditorMode, pushToTalkMode, liveWindowSeconds, hudPosition,
+             voiceCommandsEnabled
     }
 
     convenience init(from decoder: Decoder) throws {
@@ -210,7 +222,10 @@ final class AppSettings: ObservableObject, Codable {
             // existing users.
             inlineEditorMode: try c.decodeIfPresent(Bool.self, forKey: .inlineEditorMode) ?? false,
             pushToTalkMode: try c.decodeIfPresent(Bool.self, forKey: .pushToTalkMode) ?? false,
-            hudPosition: hudPos
+            hudPosition: hudPos,
+            // Phase 17: default ON for voice commands (mild bias,
+            // useful for most users).
+            voiceCommandsEnabled: try c.decodeIfPresent(Bool.self, forKey: .voiceCommandsEnabled) ?? true
         )
     }
 
@@ -230,5 +245,6 @@ final class AppSettings: ObservableObject, Codable {
         try c.encode(pushToTalkMode, forKey: .pushToTalkMode)
         try c.encode(liveWindowSeconds, forKey: .liveWindowSeconds)
         try c.encode(hudPosition.rawValue, forKey: .hudPosition)
+        try c.encode(voiceCommandsEnabled, forKey: .voiceCommandsEnabled)
     }
 }

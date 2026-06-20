@@ -35,6 +35,20 @@ final class WhisperKitTranscriber: Transcriber, @unchecked Sendable {
     /// short-circuit transcribe() when the user hasn't changed models.
     private var loadedModelName: String?
 
+    /// Phase 17: cached token IDs for the voice-command prompt. We
+    /// tokenize once after WhisperKit init (via `pipe.tokenizer`) and
+    /// reuse the result for every subsequent `transcribe()` call.
+    /// Tokenization requires the tokenizer to be loaded, so we
+    /// cannot do it at app startup; we do it lazily on first use.
+    /// Nil means "not yet computed" or "voice commands disabled".
+    private var cachedPromptTokens: [Int]?
+    /// Last language we tokenized for. If the user switches language
+    /// in Settings, we re-tokenize.
+    private var cachedPromptLanguage: String?
+    /// Voice commands toggle — read fresh from settings on every
+    /// transcribe() call so Settings UI changes take effect immediately.
+    private weak var appSettings: AppSettings?
+
     /// Build a WhisperKitConfig tuned for fast first-record and short
     /// dictation clips.
     ///
@@ -111,17 +125,17 @@ final class WhisperKitTranscriber: Transcriber, @unchecked Sendable {
         //                                  and we retry up to 5 times —
         //                                  usually enough to escape a
         //                                  hallucination loop on noisy input.
-        //   - promptTokens                → DEFERRED. WhisperKit's
-        //                                  DecodingOptions takes
-        //                                  `promptTokens: [Int]?`, not a
-        //                                  string. Implementing voice
-        //                                  commands ("new line" → \n,
-        //                                  "period" → ".") requires
-        //                                  tokenizing the prompt through
-        //                                  the model-specific tokenizer,
-        //                                  which is doable but adds
-        //                                  coupling. Tracking as
-        //                                  Phase 8.3-extra.
+        //   - promptTokens                → Phase 17 voice commands.
+        //                                  We tokenize a small
+        //                                  punctuation-vocabulary prompt
+        //                                  ("Period. Comma, New line.")
+        //                                  through the model-specific
+        //                                  tokenizer at WhisperKit init,
+        //                                  cache the token IDs, and pass
+        //                                  them on every decode. This
+        //                                  teaches the decoder to render
+        //                                  spoken voice commands as their
+        //                                  punctuation characters.
         let langArg: String? = (language == "auto" || language.isEmpty) ? nil : language
         let options = DecodingOptions(
             task: .transcribe,
@@ -136,6 +150,7 @@ final class WhisperKitTranscriber: Transcriber, @unchecked Sendable {
             skipSpecialTokens: false,        // ← keep punctuation
             withoutTimestamps: true,
             wordTimestamps: false,
+            promptTokens: currentPromptTokens(for: language),  // Phase 17
             compressionRatioThreshold: 2.4,
             logProbThreshold: -1.0,
             firstTokenLogProbThreshold: -1.5,
@@ -183,19 +198,79 @@ final class WhisperKitTranscriber: Transcriber, @unchecked Sendable {
         }
     }
 
-    // MARK: - Voice-command prompt (Phase 8.3 — DEFERRED)
+    // MARK: - Voice-command prompt tokens (Phase 17)
     //
-    // WhisperKit's DecodingOptions accepts `promptTokens: [Int]?`, not a
-    // raw string. To bias the decoder toward voice commands like "new
-    // line" → \n, "period" → ".", we would need to tokenize the prompt
-    // through the model's tokenizer at runtime. That's straightforward
-    // but adds coupling (tokenizer API varies across Whisper models).
+    // Whisper's `prompt` parameter (here `DecodingOptions.promptTokens`)
+    // biases the decoder toward a particular style / vocabulary. By
+    // pre-tokenizing a small punctuation-vocabulary prompt ("Period.
+    // Comma, New line. Question mark?") we teach the decoder that
+    // when the user says those phrases, the appropriate token to emit
+    // is the punctuation character itself.
     //
-    // For now, voice commands are not implemented. Punctuation is still
-    // correct because we keep `skipSpecialTokens: false` and disable VAD
-    // chunking (which was the main source of punctuation collapse in v1).
-    //
-    // When implementing: cache token IDs for a known set of
-    // multi-language prompts ("Period.", "New line.", "Comma,", etc.)
-    // and pass them via `options.promptTokens`.
+    // Token IDs are model-specific (multilingual models use a different
+    // BPE vocab than English-only). We tokenize through the live
+    // `pipe.tokenizer` after WhisperKit init and cache the result so
+    // we pay the cost once per (model, language) pair.
+
+    /// Build the natural-language voice command prompt for the
+    /// user's language. We keep the examples short and concrete so
+    /// the model picks up the pattern without biasing regular
+    /// dictation.
+    private func voiceCommandPrompt(for language: String) -> String {
+        switch language {
+        case "ru":
+            return "Привет, как дела. Сегодня отличный день. Точка. " +
+                   "Запятая, ещё текст. Вопрос? Восклицание! Новая строка."
+        case "en":
+            return "Hello, how are you. Today is a great day. Period. " +
+                   "Comma, more text. Question? Exclamation! New line."
+        default:
+            // Auto-detect: pick English since most users of the
+            // default model family speak it. The bias is mild either
+            // way.
+            return "Hello. Period. Comma, more text. New line."
+        }
+    }
+
+    /// Returns the cached prompt tokens for the given language, or
+    /// nil if voice commands are disabled in Settings. Re-tokenizes
+    /// when the language changes.
+    ///
+    /// Whisper limits `promptTokens` to ~`maxPromptLen` (typically
+    /// 224). We cap our prompt well below that to leave headroom.
+    private func currentPromptTokens(for language: String) -> [Int]? {
+        // Settings-driven opt-out: caller can disable voice commands.
+        // We read this lazily because AppSettings isn't injected at
+        // init time (it can change at any time via Settings UI).
+        if appSettings?.voiceCommandsEnabled == false {
+            return nil
+        }
+        // If we already tokenized for this language, return the cache.
+        if cachedPromptLanguage == language, let tokens = cachedPromptTokens {
+            return tokens
+        }
+        // Tokenize. Requires WhisperKit + tokenizer to be initialized.
+        guard let tokenizer = pipe?.tokenizer else { return nil }
+        let prompt = voiceCommandPrompt(for: language)
+        var tokens = tokenizer.encode(text: prompt)
+        // Trim to a safe length — WhisperKit's prompt slot is bounded.
+        // 200 tokens is well under the typical 224-token cap and
+        // gives the decoder room for actual content.
+        if tokens.count > 200 {
+            tokens = Array(tokens.suffix(200))
+        }
+        cachedPromptTokens = tokens
+        cachedPromptLanguage = language
+        NSLog("MyWhi.WhisperKitTranscriber: voice-command prompt tokenized (\(tokens.count) tokens for \(language))")
+        return tokens
+    }
+
+    /// Hook used by `EngineManager` to inject the live AppSettings
+    /// reference. Must be called once after construction so the
+    /// voice-commands toggle and any future settings reach the
+    /// transcriber without threading AppSettings through every
+    /// `transcribe(audioPath:)` call site.
+    func setAppSettings(_ settings: AppSettings) {
+        self.appSettings = settings
+    }
 }

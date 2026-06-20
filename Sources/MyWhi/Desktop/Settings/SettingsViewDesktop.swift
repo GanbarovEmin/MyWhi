@@ -264,6 +264,9 @@ struct SettingsViewDesktop: View {
                     Spacer()
                 }
                 .help("Где показывать плавающее окно во время записи.")
+
+                Toggle("Голосовые команды (period, comma, new line)", isOn: voiceCommandsBinding)
+                    .help("Биас декодера на распознавание голосовых команд. «точка» → «.», «запятая» → «,», «новая строка» → перенос.")
             }
         }
     }
@@ -303,6 +306,13 @@ struct SettingsViewDesktop: View {
         Binding(
             get: { appState.settings.hudPosition },
             set: { appState.settings.hudPosition = $0 }
+        )
+    }
+
+    private var voiceCommandsBinding: Binding<Bool> {
+        Binding(
+            get: { appState.settings.voiceCommandsEnabled },
+            set: { appState.settings.voiceCommandsEnabled = $0 }
         )
     }
 

@@ -39,6 +39,12 @@ final class EngineManager: ObservableObject {
     /// inject fakes.
     nonisolated(unsafe) var makeEngine: (String) -> Transcriber
 
+    /// Phase 17: live AppSettings reference. Passed to newly-created
+    /// transcriber instances via `setAppSettings(_:)` so they can read
+    /// voice-commands / future per-engine settings without threading
+    /// AppSettings through every call site.
+    weak var appSettings: AppSettings?
+
     init() {
         // Default factory: only WhisperKit is supported.
         self.makeEngine = { code in
@@ -80,6 +86,12 @@ final class EngineManager: ObservableObject {
                 code: 1,
                 userInfo: [NSLocalizedDescriptionKey: "Unknown engine: \(name)"]
             )
+        }
+
+        // Phase 17: hand the new engine the live AppSettings reference
+        // so it can read voice-commands / future per-engine settings.
+        if let whisper = newEngine as? WhisperKitTranscriber, let settings = appSettings {
+            whisper.setAppSettings(settings)
         }
 
         do {
