@@ -31,6 +31,7 @@ struct SettingsViewDesktop: View {
                 header
                 engineSection
                 behaviorSection
+                personalDictionarySection
                 storageSection
                 aboutSection
             }
@@ -362,6 +363,12 @@ struct SettingsViewDesktop: View {
     }
     private var autoPasteBinding: Binding<Bool> {
         Binding(get: { appState.settings.autoPaste }, set: { appState.settings.autoPaste = $0 })
+    }
+
+    // MARK: - Personal Dictionary (Phase 19)
+
+    private var personalDictionarySection: some View {
+        PersonalDictionaryView()
     }
 
     // MARK: - Storage

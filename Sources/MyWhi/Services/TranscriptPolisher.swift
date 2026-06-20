@@ -40,6 +40,23 @@ actor PersonalDictionaryStore {
 
         return []
     }
+
+    /// Phase 19: persist the user's personal dictionary. Replaces the
+    /// file atomically (write to a temp file then rename) so a
+    /// crash mid-write can't corrupt the dictionary. Returns silently
+    /// on failure — the user will see the old dictionary on next
+    /// load, which is the safe degradation.
+    func save(_ entries: [DictionaryReplacement]) {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        do {
+            let data = try encoder.encode(entries)
+            try data.write(to: url, options: [.atomic])
+            NSLog("MyWhi.PersonalDictionaryStore: saved \(entries.count) entries")
+        } catch {
+            NSLog("MyWhi.PersonalDictionaryStore: save failed: \(error)")
+        }
+    }
 }
 
 enum TranscriptPolisher {
