@@ -47,10 +47,6 @@ Updates are read from the GitHub-hosted `appcast.xml` in this repository and dow
 - Transcripts are saved as Markdown only when history saving is enabled.
 - Accessibility permission is used only for optional paste/typing behavior.
 
-## Screenshots
-
-![MyWhi live recording HUD](docs/assets/mywhi-live.png)
-
 ## Build From Source
 
 Requirements:
