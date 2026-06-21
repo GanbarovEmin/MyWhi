@@ -10,6 +10,11 @@
     <string>MyWhi</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
+    <key>CFBundleLocalizations</key>
+    <array>
+        <string>en</string>
+        <string>ru</string>
+    </array>
     <key>CFBundleIdentifier</key>
     <string>az.isupport.mywhi</string>
     <key>CFBundleInfoDictionaryVersion</key>
@@ -19,19 +24,38 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>2.0.0</string>
+    <string>3.9.0</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>39</string>
     <key>LSApplicationCategoryType</key>
     <string>public.app-category.productivity</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>LSUIElement</key>
     <true/>
+    <key>SUFeedURL</key>
+    <string>https://raw.githubusercontent.com/GanbarovEmin/MyWhi/main/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>z9Z5BqW5UpH4JTT5zvESmfl0Kb4Pa6ZR3fuMSJuu+Tc=</string>
+    <key>SUEnableInstallerLauncherService</key>
+    <true/>
+    <key>SUAutomaticallyUpdate</key>
+    <false/>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSMicrophoneUsageDescription</key>
     <string>MyWhi needs microphone access to record your voice for local transcription.</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>mywhi</string>
+            </array>
+            <key>CFBundleURLName</key>
+            <string>MyWhi URL Scheme</string>
+        </dict>
+    </array>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
     <key>NSSupportsAutomaticTermination</key>

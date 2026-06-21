@@ -13,7 +13,7 @@ struct HistoryEntry: Identifiable, Codable, Hashable {
     var displayTime: String {
         let f = DateFormatter()
         f.dateFormat = "HH:mm:ss"
-        f.locale = Locale(identifier: "ru_RU")
+        f.locale = .autoupdatingCurrent
         return f.string(from: timestamp)
     }
 }

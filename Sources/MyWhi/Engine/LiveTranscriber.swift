@@ -140,6 +140,18 @@ final class LiveTranscriber {
             let trimmed = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { return }
 
+            // Real-time language detection: if user has "auto" language
+            // selected, detect from partial text and notify engine for
+            // dynamic promptTokens re-tokenization (Wispr Flow parity).
+            if language == "auto" {
+                let detectedLang = LanguageDetector.shared.detectLanguage(from: trimmed)
+                if detectedLang != "auto" {
+                    await MainActor.run {
+                        engineManager.notifyLanguageDetected(detectedLang)
+                    }
+                }
+            }
+
             // Phase 14: sliding-window merge. With sliding window, the
             // audio range WhisperKit sees shifts forward each tick, so
             // consecutive decodes overlap on the boundary words. We

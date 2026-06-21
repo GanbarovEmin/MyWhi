@@ -16,3 +16,6 @@ dist/
 
 # Logs
 *.log
+
+# Local agent/audit artifacts
+.hermes/

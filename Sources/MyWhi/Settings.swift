@@ -100,6 +100,13 @@ final class AppSettings: ObservableObject, Codable {
     /// the bias is mild enough that it doesn't hurt regular dictation.
     @Published var voiceCommandsEnabled: Bool
 
+    // MARK: Post-processing
+
+    /// When ON, transcripts are post-processed to remove filler words,
+    /// fix punctuation, and capitalize sentences. Uses Apple Intelligence
+    /// on macOS 15+, falls back to regex on older versions. Default ON.
+    @Published var postProcessingEnabled: Bool
+
     // MARK: Available values
 
     static let availableModels: [(code: String, label: String, description: String)] = [
@@ -134,7 +141,8 @@ final class AppSettings: ObservableObject, Codable {
         pushToTalkMode: Bool = false,
         showIdleFloatingHUD: Bool = false,
         hudPosition: HUDPosition = .bottom,
-        voiceCommandsEnabled: Bool = true
+        voiceCommandsEnabled: Bool = true,
+        postProcessingEnabled: Bool = true
     ) {
         // Validate inputs against known values; fall back to defaults so
         // a hand-edited settings file cannot crash the app.
@@ -162,6 +170,7 @@ final class AppSettings: ObservableObject, Codable {
         self.showIdleFloatingHUD = showIdleFloatingHUD
         self.hudPosition = hudPosition
         self.voiceCommandsEnabled = voiceCommandsEnabled
+        self.postProcessingEnabled = postProcessingEnabled
     }
 
     // MARK: - Persistence
@@ -211,7 +220,8 @@ final class AppSettings: ObservableObject, Codable {
         case modelSize, language, autoCopy, saveHistory, autoPaste, useDarkMode,
              hotkeyModifiers, hotkeyKeyCode, liveStreamingEnabled, soundFeedbackEnabled,
              inlineEditorMode, pushToTalkMode, liveWindowSeconds, hudPosition,
-             voiceCommandsEnabled, phantomCursorMode, showIdleFloatingHUD
+             voiceCommandsEnabled, phantomCursorMode, showIdleFloatingHUD,
+             postProcessingEnabled
     }
 
     convenience init(from decoder: Decoder) throws {
@@ -250,7 +260,8 @@ final class AppSettings: ObservableObject, Codable {
             hudPosition: hudPos,
             // Phase 17: default ON for voice commands (mild bias,
             // useful for most users).
-            voiceCommandsEnabled: try c.decodeIfPresent(Bool.self, forKey: .voiceCommandsEnabled) ?? true
+            voiceCommandsEnabled: try c.decodeIfPresent(Bool.self, forKey: .voiceCommandsEnabled) ?? true,
+            postProcessingEnabled: try c.decodeIfPresent(Bool.self, forKey: .postProcessingEnabled) ?? true
         )
     }
 
@@ -273,5 +284,6 @@ final class AppSettings: ObservableObject, Codable {
         try c.encode(liveWindowSeconds, forKey: .liveWindowSeconds)
         try c.encode(hudPosition.rawValue, forKey: .hudPosition)
         try c.encode(voiceCommandsEnabled, forKey: .voiceCommandsEnabled)
+        try c.encode(postProcessingEnabled, forKey: .postProcessingEnabled)
     }
 }

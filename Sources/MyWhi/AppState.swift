@@ -321,7 +321,13 @@ final class AppState: ObservableObject {
                     language: language
                 )
                 let dictionary = await dictionaryStore.load()
-                let text = TranscriptPolisher.polish(rawText, dictionary: dictionary)
+                var text = TranscriptPolisher.polish(rawText, dictionary: dictionary)
+
+                // Post-process with Apple Intelligence (macOS 15+) or regex fallback
+                if settings.postProcessingEnabled {
+                    text = await TranscriptPostProcessor.shared.process(text, language: language)
+                }
+
                 self.lastTranscript = text
 
                 // Empty result handling: if WhisperKit returned no text

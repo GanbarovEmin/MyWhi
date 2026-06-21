@@ -189,8 +189,7 @@ struct InsightsView: View {
     private func formattedNumber(_ n: Int) -> String {
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
-        formatter.locale = Locale(identifier: "ru_RU")
-        formatter.groupingSeparator = " "
+        formatter.locale = .autoupdatingCurrent
         return formatter.string(from: NSNumber(value: n)) ?? "\(n)"
     }
 }

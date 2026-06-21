@@ -237,7 +237,7 @@ struct ScratchpadDetailView: View {
         let f = DateFormatter()
         f.dateStyle = .medium
         f.timeStyle = .short
-        f.locale = Locale(identifier: "ru_RU")
+        f.locale = .autoupdatingCurrent
         return f.string(from: date)
     }
 

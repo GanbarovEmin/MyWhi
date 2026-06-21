@@ -64,7 +64,7 @@ struct HDSidebarItem<Section: Hashable>: View {
                 .frame(width: 20, alignment: .center)
                 .foregroundStyle(iconColor)
 
-            Text(label)
+            Text(LocalizedStringKey(label))
                 .font(HDFont.body)
                 .foregroundStyle(labelColor)
 

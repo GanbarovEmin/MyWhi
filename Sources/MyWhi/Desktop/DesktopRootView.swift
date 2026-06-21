@@ -53,11 +53,17 @@ struct DesktopRootView: View {
     var body: some View {
         HStack(spacing: 0) {
             sidebar
-                .frame(width: 240)
+                .frame(width: DesktopShellLayout.sidebarWidth)
             Divider()
+                .frame(width: DesktopShellLayout.dividerWidth)
             detail
-                .frame(minWidth: 640)
+                .frame(
+                    minWidth: DesktopShellLayout.detailMinWidth,
+                    maxWidth: .infinity,
+                    maxHeight: .infinity
+                )
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .background(theme.canvas)
         .onReceive(NotificationCenter.default.publisher(for: .mywhiOpenDesktop)) { _ in
             openDesktopFromMenuBar()
@@ -179,20 +185,9 @@ struct DesktopRootView: View {
         }
         .animation(.easeInOut(duration: 0.18), value: selection)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if showsDesktopRecordingPill {
-                DesktopRecordingPill()
-                    .padding(.horizontal, HDSpacing.xl.rawValue)
-                    .padding(.bottom, HDSpacing.md.rawValue)
-            }
-        }
-    }
-
-    private var showsDesktopRecordingPill: Bool {
-        switch selection {
-        case .home, .scratchpad, .none:
-            return true
-        case .insights, .settings:
-            return false
+            DesktopRecordingPill()
+                .padding(.horizontal, HDSpacing.xl.rawValue)
+                .padding(.bottom, HDSpacing.md.rawValue)
         }
     }
 

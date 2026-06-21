@@ -18,6 +18,7 @@ struct SettingsViewDesktop: View {
     @State private var vaultSize: Int64 = 0
     @State private var obsidianStatus: ObsidianStatus = .unknown
     @State private var showingHotkeySheet: Bool = false
+    @State private var downloadedModels: Set<String> = []
 
     enum ObsidianStatus {
         case unknown
@@ -27,21 +28,33 @@ struct SettingsViewDesktop: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: HDSpacing.xxl.rawValue) {
+            VStack(alignment: .leading, spacing: HDSpacing.xl.rawValue) {
                 header
                 engineSection
-                behaviorSection
+                recordingSection
+                insertionSection
+                appearanceSection
+                textCleanupSection
                 personalDictionarySection
+                postProcessingSection
                 storageSection
                 aboutSection
             }
             .padding(HDSpacing.xxl.rawValue)
-            .frame(maxWidth: 720)
+            .frame(maxWidth: 760, alignment: .topLeading)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(theme.canvas)
         .task {
             await refreshStorage()
+            refreshDownloadedModels()
             obsidianStatus = detectObsidian()
+        }
+        .onChange(of: appState.engineManager.isLoading) { _, isLoading in
+            if !isLoading {
+                refreshDownloadedModels()
+            }
         }
     }
 
@@ -82,26 +95,19 @@ struct SettingsViewDesktop: View {
                         .foregroundStyle(theme.deepGreen)
                 }
 
-                Picker("Модель", selection: modelBinding) {
+                VStack(spacing: HDSpacing.xs.rawValue) {
                     ForEach(AppSettings.availableModels, id: \.code) { entry in
-                        Text(entry.label).tag(entry.code)
+                        modelStatusRow(entry)
                     }
                 }
-                .pickerStyle(.menu)
                 .disabled(appState.engineManager.isLoading)
                 .onChange(of: appState.settings.modelSize) { _, _ in
                     Task { await appState.reloadEngine() }
                 }
 
-                if let entry = AppSettings.availableModels.first(where: { $0.code == appState.settings.modelSize }) {
-                    Text(entry.description)
-                        .font(HDFont.micro)
-                        .foregroundStyle(theme.muted)
-                }
-
                 Picker("Язык", selection: languageBinding) {
                     ForEach(AppSettings.availableLanguages, id: \.code) { lang in
-                        Text(lang.label).tag(lang.code)
+                        Text(LocalizedStringKey(lang.label)).tag(lang.code)
                     }
                 }
                 .pickerStyle(.segmented)
@@ -134,92 +140,66 @@ struct SettingsViewDesktop: View {
         )
     }
 
-    // MARK: Behavior
+    private func modelStatusRow(_ entry: (code: String, label: String, description: String)) -> some View {
+        let isSelected = appState.settings.modelSize == entry.code
+        let isDownloaded = downloadedModels.contains(entry.code)
 
-    private var behaviorSection: some View {
+        return Button {
+            guard appState.settings.modelSize != entry.code else { return }
+            appState.settings.modelSize = entry.code
+        } label: {
+            HStack(spacing: HDSpacing.md.rawValue) {
+                Image(systemName: isDownloaded ? "checkmark.circle.fill" : "icloud.and.arrow.down")
+                    .font(HDFont.iconSmall)
+                    .foregroundStyle(isDownloaded ? theme.deepGreen : theme.muted)
+                    .frame(width: 22)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(LocalizedStringKey(entry.label))
+                        .font(HDFont.formLabel)
+                        .foregroundStyle(theme.ink)
+                    Text(LocalizedStringKey(entry.description))
+                        .font(HDFont.micro)
+                        .foregroundStyle(theme.muted)
+                }
+
+                Spacer(minLength: HDSpacing.md.rawValue)
+
+                if appState.engineManager.isLoading && isSelected {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+
+                Text(LocalizedStringKey(isDownloaded ? "Скачано" : "Нужно скачать"))
+                    .font(HDFont.monoLabel(size: 10, weight: .medium))
+                    .padding(.horizontal, HDSpacing.sm.rawValue)
+                    .padding(.vertical, 3)
+                    .background(
+                        Capsule().fill(isDownloaded ? theme.surfacePaleGreen : theme.surfaceStone)
+                    )
+                    .foregroundStyle(isDownloaded ? theme.deepGreen : theme.muted)
+            }
+            .padding(.horizontal, HDSpacing.md.rawValue)
+            .padding(.vertical, HDSpacing.sm.rawValue)
+            .background(
+                RoundedRectangle(cornerRadius: HDRadius.sm.rawValue, style: .continuous)
+                    .fill(isSelected ? theme.surfaceStone.opacity(0.85) : Color.clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: HDRadius.sm.rawValue, style: .continuous)
+                    .stroke(isSelected ? theme.border : Color.clear, lineWidth: 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: HDRadius.sm.rawValue, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: Recording
+
+    private var recordingSection: some View {
         HDCard(.canvas) {
             VStack(alignment: .leading, spacing: HDSpacing.md.rawValue) {
-                sectionTitle("Поведение")
-
-                Toggle("Копировать в буфер после записи", isOn: autoCopyBinding)
-                Toggle("Сохранять в vault", isOn: saveHistoryBinding)
-                Toggle("Авто-вставка в активное приложение (⌘V)", isOn: autoPasteBinding)
-                    .help("Требует разрешение Accessibility")
-
-                Divider()
-                    .padding(.vertical, HDSpacing.xs.rawValue)
-
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Глобальный hotkey")
-                            .font(HDFont.formLabel)
-                            .foregroundStyle(theme.ink)
-                        Text("Работает из любого приложения")
-                            .font(HDFont.caption)
-                            .foregroundStyle(theme.muted)
-                    }
-                    Spacer()
-                    Text(hotkeyDisplay)
-                        .font(HDFont.monoLabel(size: 14, weight: .medium))
-                        .padding(.horizontal, HDSpacing.md.rawValue)
-                        .padding(.vertical, HDSpacing.xs.rawValue)
-                        .background(
-                            RoundedRectangle(cornerRadius: HDRadius.xs.rawValue, style: .continuous)
-                                .fill(theme.surfaceStone)
-                        )
-                        .foregroundStyle(theme.ink)
-                    Button("Изменить…") {
-                        showingHotkeySheet = true
-                    }
-                    .buttonStyle(.borderless)
-                }
-                .sheet(isPresented: $showingHotkeySheet) {
-                    HotkeyCaptureSheet(
-                        initialModifiers: appState.settings.hotkeyModifiers,
-                        initialKeyCode: appState.settings.hotkeyKeyCode,
-                        onSave: { mods, key in
-                            appState.settings.hotkeyModifiers = mods
-                            appState.settings.hotkeyKeyCode = key
-                            NotificationCenter.default.post(
-                                name: .mywhiHotkeyChanged,
-                                object: nil,
-                                userInfo: ["modifiers": mods, "keyCode": key]
-                            )
-                        },
-                        onCancel: {}
-                    )
-                }
-
-                if appState.settings.autoPaste {
-                    HStack(spacing: HDSpacing.sm.rawValue) {
-                        if AutoPasteService.isAccessibilityGranted() {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(theme.deepGreen)
-                            Text("Разрешение Accessibility выдано")
-                                .font(HDFont.caption)
-                                .foregroundStyle(theme.muted)
-                        } else {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundStyle(theme.coral)
-                            Text("Нужно разрешение Accessibility в Системных настройках")
-                                .font(HDFont.caption)
-                                .foregroundStyle(theme.coral)
-                        }
-                        Spacer()
-                        HDButtonSecondary(title: "Открыть настройки") {
-                            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
-                        }
-                    }
-                }
-
-                Divider()
-
-                Toggle("Тёмная тема вместо системной", isOn: darkModeBinding)
-                    .help("Принудительно включить тёмную тему независимо от системных настроек macOS")
-
-                // Phase 8 / 9 — surface the new toggles in Settings so
-                // users can opt out of features that aren't for them.
-                Divider()
+                sectionTitle("Запись")
 
                 Toggle("Показывать текст во время записи", isOn: liveStreamingBinding)
                     .help("Слова появляются по мере того, как ты говоришь. Требует больше CPU.")
@@ -227,26 +207,12 @@ struct SettingsViewDesktop: View {
                 Toggle("Звуковой сигнал старт/стоп", isOn: soundFeedbackBinding)
                     .help("Мягкий chime при начале и конце записи.")
 
-                Divider()
-
-                Toggle("Редактировать перед вставкой", isOn: inlineEditorBinding)
-                    .help("После транскрибации показывать редактор вместо авто-копирования. Нажми «Вставить» чтобы скопировать отредактированный текст.")
-
                 Toggle("Удерживать hotkey для записи", isOn: pushToTalkBinding)
                     .help("Удерживай горячую клавишу чтобы записать, отпусти чтобы остановить. По умолчанию — toggle.")
 
-                // Phase 23: phantom cursor mode. Toggling this on
-                // makes MyWhi type the dictated text character by
-                // character into the focused app instead of pasting
-                // it as a single Cmd+V. Requires Accessibility
-                // permission (System Settings → Privacy & Security).
-                Toggle("Посимвольный ввод в активное приложение", isOn: phantomCursorBinding)
-                    .help("Ввод текста посимвольно прямо в активное приложение — текст появляется где курсор. Требует разрешения Accessibility.")
+                Divider()
 
-                HStack(spacing: HDSpacing.sm.rawValue) {
-                    Text("Окно live-декода:")
-                        .font(HDFont.formLabel)
-                        .foregroundStyle(theme.ink)
+                settingsPickerRow(title: "Окно live-декода") {
                     Picker("", selection: liveWindowBinding) {
                         Text("4 сек").tag(4)
                         Text("6 сек").tag(6)
@@ -256,26 +222,142 @@ struct SettingsViewDesktop: View {
                     }
                     .pickerStyle(.menu)
                     .frame(maxWidth: 220)
-                    Spacer()
                 }
                 .help("Сколько секунд последнего аудио декодировать в каждом live-тике. Меньше — отзывчивее, больше — стабильнее.")
+            }
+        }
+    }
 
-                HStack(spacing: HDSpacing.sm.rawValue) {
-                    Text("Позиция плавающего HUD:")
-                        .font(HDFont.formLabel)
-                        .foregroundStyle(theme.ink)
+    // MARK: Insertion
+
+    private var insertionSection: some View {
+        HDCard(.canvas) {
+            VStack(alignment: .leading, spacing: HDSpacing.md.rawValue) {
+                sectionTitle("Вставка и hotkey")
+
+                Toggle("Копировать в буфер после записи", isOn: autoCopyBinding)
+                Toggle("Сохранять в vault", isOn: saveHistoryBinding)
+                Toggle("Авто-вставка в активное приложение (⌘V)", isOn: autoPasteBinding)
+                    .help("Требует разрешение Accessibility")
+
+                hotkeyRow
+
+                if appState.settings.autoPaste {
+                    accessibilityRow
+                }
+
+                Divider()
+
+                Toggle("Редактировать перед вставкой", isOn: inlineEditorBinding)
+                    .help("После транскрибации показывать редактор вместо авто-копирования. Нажми «Вставить» чтобы скопировать отредактированный текст.")
+
+                Toggle("Посимвольный ввод в активное приложение", isOn: phantomCursorBinding)
+                    .help("Ввод текста посимвольно прямо в активное приложение — текст появляется где курсор. Требует разрешения Accessibility.")
+            }
+        }
+    }
+
+    private var hotkeyRow: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Глобальный hotkey")
+                    .font(HDFont.formLabel)
+                    .foregroundStyle(theme.ink)
+                Text("Работает из любого приложения")
+                    .font(HDFont.caption)
+                    .foregroundStyle(theme.muted)
+            }
+            Spacer()
+            Text(hotkeyDisplay)
+                .font(HDFont.monoLabel(size: 14, weight: .medium))
+                .padding(.horizontal, HDSpacing.md.rawValue)
+                .padding(.vertical, HDSpacing.xs.rawValue)
+                .background(
+                    RoundedRectangle(cornerRadius: HDRadius.xs.rawValue, style: .continuous)
+                        .fill(theme.surfaceStone)
+                )
+                .foregroundStyle(theme.ink)
+            Button("Изменить…") {
+                showingHotkeySheet = true
+            }
+            .buttonStyle(.borderless)
+        }
+        .sheet(isPresented: $showingHotkeySheet) {
+            HotkeyCaptureSheet(
+                initialModifiers: appState.settings.hotkeyModifiers,
+                initialKeyCode: appState.settings.hotkeyKeyCode,
+                onSave: { mods, key in
+                    appState.settings.hotkeyModifiers = mods
+                    appState.settings.hotkeyKeyCode = key
+                    NotificationCenter.default.post(
+                        name: .mywhiHotkeyChanged,
+                        object: nil,
+                        userInfo: ["modifiers": mods, "keyCode": key]
+                    )
+                },
+                onCancel: {}
+            )
+        }
+    }
+
+    private var accessibilityRow: some View {
+        HStack(spacing: HDSpacing.sm.rawValue) {
+            if AutoPasteService.isAccessibilityGranted() {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(theme.deepGreen)
+                Text("Accessibility разрешение выдано")
+                    .font(HDFont.caption)
+                    .foregroundStyle(theme.muted)
+            } else {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(theme.coral)
+                Text("Для авто-вставки нужно Accessibility разрешение")
+                    .font(HDFont.caption)
+                    .foregroundStyle(theme.coral)
+            }
+            Spacer()
+            HDButtonSecondary(title: "Открыть настройки") {
+                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+            }
+        }
+        .padding(.vertical, HDSpacing.xs.rawValue)
+    }
+
+    // MARK: Appearance
+
+    private var appearanceSection: some View {
+        HDCard(.canvas) {
+            VStack(alignment: .leading, spacing: HDSpacing.md.rawValue) {
+                sectionTitle("Окно и внешний вид")
+
+                Toggle("Тёмная тема вместо системной", isOn: darkModeBinding)
+                    .help("Принудительно включить тёмную тему независимо от системных настроек macOS")
+
+                Toggle("Показывать idle-плашку на рабочем столе", isOn: showIdleFloatingHUDBinding)
+                    .help("Когда включено, MyWhi показывает плавающую кнопку записи даже до старта. По умолчанию выключено.")
+
+                settingsPickerRow(title: "Позиция плавающего HUD") {
                     Picker("", selection: hudPositionBinding) {
                         Text("Снизу").tag(AppSettings.HUDPosition.bottom)
                         Text("Сверху").tag(AppSettings.HUDPosition.top)
                     }
                     .pickerStyle(.menu)
                     .frame(maxWidth: 320)
-                    Spacer()
                 }
                 .help("Где показывать плавающее окно во время записи.")
+            }
+        }
+    }
 
-                Toggle("Показывать idle-плашку на рабочем столе", isOn: showIdleFloatingHUDBinding)
-                    .help("Когда включено, MyWhi показывает плавающую кнопку записи даже до старта. По умолчанию выключено.")
+    // MARK: Text cleanup
+
+    private var textCleanupSection: some View {
+        HDCard(.canvas) {
+            VStack(alignment: .leading, spacing: HDSpacing.md.rawValue) {
+                sectionTitle("Текст")
+
+                Toggle("Пост-обработка текста", isOn: postProcessingBinding)
+                    .help("Удаление слов-паразитов, исправление пунктуации и заглавных букв, ручные regex-правила.")
 
                 Toggle("Голосовые команды пунктуации", isOn: voiceCommandsBinding)
                     .help("Биас декодера на распознавание голосовых команд. «точка» → «.», «запятая» → «,», «новая строка» → перенос.")
@@ -344,6 +426,13 @@ struct SettingsViewDesktop: View {
         )
     }
 
+    private var postProcessingBinding: Binding<Bool> {
+        Binding(
+            get: { appState.settings.postProcessingEnabled },
+            set: { appState.settings.postProcessingEnabled = $0 }
+        )
+    }
+
     private var hotkeyDisplay: String {
         let mods = appState.settings.hotkeyModifiers
         var parts: [String] = []
@@ -398,6 +487,12 @@ struct SettingsViewDesktop: View {
         PersonalDictionaryView()
     }
 
+    // MARK: - Post-Processing Rules
+
+    private var postProcessingSection: some View {
+        PostProcessingRulesView()
+    }
+
     // MARK: - Storage
 
     private var storageSection: some View {
@@ -445,6 +540,15 @@ struct SettingsViewDesktop: View {
                 Text("100% локально. Аудио остаётся на этом Mac.")
                     .font(HDFont.micro)
                     .foregroundStyle(theme.muted)
+                HStack(spacing: HDSpacing.md.rawValue) {
+                    HDButtonSecondary(title: "Проверить обновления", icon: "arrow.down.circle") {
+                        appState.sceneRouter?.setMode(.desktop)
+                        AppContainer.shared.updateController.checkForUpdates(nil)
+                    }
+                    Text("Обновления приходят через GitHub Releases.")
+                        .font(HDFont.micro)
+                        .foregroundStyle(theme.muted)
+                }
             }
         }
     }
@@ -452,15 +556,28 @@ struct SettingsViewDesktop: View {
     // MARK: - Helpers
 
     private func sectionTitle(_ text: String) -> some View {
-        Text(text.uppercased())
+        Text(LocalizedStringKey(text.uppercased()))
             .font(HDFont.monoLabel(size: 11))
             .hdTracking(0.5)
             .foregroundStyle(theme.muted)
     }
 
+    private func settingsPickerRow<Control: View>(
+        title: String,
+        @ViewBuilder control: () -> Control
+    ) -> some View {
+        HStack(spacing: HDSpacing.sm.rawValue) {
+            Text(LocalizedStringKey(title))
+                .font(HDFont.formLabel)
+                .foregroundStyle(theme.ink)
+            control()
+            Spacer(minLength: 0)
+        }
+    }
+
     private func row(_ label: String, value: String, mono: Bool = false) -> some View {
         HStack(alignment: .top) {
-            Text(label)
+            Text(LocalizedStringKey(label))
                 .font(HDFont.bodySmall)
                 .foregroundStyle(theme.muted)
                 .frame(width: 130, alignment: .leading)
@@ -477,6 +594,12 @@ struct SettingsViewDesktop: View {
         // directly without a redundant MainActor.run hop.
         let bytes = (try? await appState.vaultStore.sizeOnDisk()) ?? 0
         vaultSize = bytes
+    }
+
+    private func refreshDownloadedModels() {
+        downloadedModels = WhisperKitModelStore.shared.downloadedModels(
+            from: AppSettings.availableModels.map(\.code)
+        )
     }
 
     private func formatBytes(_ bytes: Int64) -> String {

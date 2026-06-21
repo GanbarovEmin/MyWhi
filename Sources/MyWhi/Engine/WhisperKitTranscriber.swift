@@ -65,6 +65,7 @@ final class WhisperKitTranscriber: Transcriber, @unchecked Sendable {
     private func makeConfig(_ resolved: String) -> WhisperKitConfig {
         WhisperKitConfig(
             model: resolved,
+            downloadBase: WhisperKitModelStore.defaultDownloadBase,
             verbose: false,
             logLevel: .error,
             prewarm: true,
@@ -313,5 +314,16 @@ final class WhisperKitTranscriber: Transcriber, @unchecked Sendable {
     /// `transcribe(audioPath:)` call site.
     func setAppSettings(_ settings: AppSettings) {
         self.appSettings = settings
+    }
+
+    /// Called from EngineManager when live language detection identifies
+    /// a new language. Forces re-tokenization of voice-command promptTokens
+    /// for the detected language (Wispr Flow auto-detect parity).
+    func updatePromptTokensForLanguage(_ language: String) {
+        guard language != cachedPromptLanguage else { return }
+        NSLog("MyWhi.WhisperKitTranscriber: live language update \(cachedPromptLanguage ?? "<nil>") → \(language); re-tokenizing prompt")
+        cachedPromptTokens = nil
+        cachedPromptLanguage = nil
+        // Next transcribe() call will lazily re-tokenize via currentPromptTokens(for:)
     }
 }

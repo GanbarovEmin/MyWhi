@@ -128,6 +128,15 @@ final class EngineManager: ObservableObject {
     func transcribe(audioPath: String, model: String, language: String) async throws -> String {
         try await active.transcribe(audioPath: audioPath, model: model, language: language)
     }
+
+    /// Called from LiveTranscriber when auto-detect detects a language
+    /// from partial text. Notifies the active WhisperKitTranscriber to
+    /// re-tokenize promptTokens for the new language (Wispr Flow parity).
+    func notifyLanguageDetected(_ language: String) {
+        if let whisper = active as? WhisperKitTranscriber {
+            whisper.updatePromptTokensForLanguage(language)
+        }
+    }
 }
 
 /// Placeholder used until the first setEngine() call completes. Lets

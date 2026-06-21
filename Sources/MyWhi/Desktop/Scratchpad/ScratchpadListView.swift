@@ -107,7 +107,7 @@ struct ScratchpadListView: View {
                         .listRowBackground(Color.clear)
                     }
                 } header: {
-                    Text(group.title)
+                    Text(LocalizedStringKey(group.title))
                         .font(HDFont.monoLabel(size: 10, weight: .medium))
                         .hdTracking(0.5)
                         .foregroundStyle(theme.muted)
@@ -249,7 +249,7 @@ struct ScratchpadListView: View {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         formatter.timeStyle = .none
-        formatter.locale = Locale(identifier: "ru_RU")
+        formatter.locale = .autoupdatingCurrent
 
         for day in older.keys.sorted(by: >) {
             groups.append(ScratchpadGroup(
@@ -362,11 +362,11 @@ private struct ScratchpadRow: View {
             return time
         }
         if calendar.isDateInYesterday(date) {
-            return "Вчера · \(time)"
+            return "\(NSLocalizedString("Вчера", comment: "Yesterday relative date label")) · \(time)"
         }
 
         let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "ru_RU")
+        formatter.locale = .autoupdatingCurrent
         formatter.dateStyle = .short
         formatter.timeStyle = .short
         return formatter.string(from: date)

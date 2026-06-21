@@ -18,11 +18,13 @@ final class AppContainer: ObservableObject {
     let appState: AppState
     let sceneRouter: AppSceneRouter
     let globalHotKey: GlobalHotKey
+    let updateController: UpdateController
     private var undoMonitor: Any?
     private var cancellables = Set<AnyCancellable>()
 
     private init() {
         self.sceneRouter = AppSceneRouter.shared
+        self.updateController = UpdateController()
         self.appState = AppState()
         self.appState.sceneRouter = sceneRouter
 

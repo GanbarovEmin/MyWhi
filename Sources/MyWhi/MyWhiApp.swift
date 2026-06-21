@@ -11,6 +11,7 @@
 import SwiftUI
 import AppKit
 import Combine
+import Carbon
 
 @main
 struct MyWhiApp: App {
@@ -28,7 +29,10 @@ struct MyWhiApp: App {
                     .environmentObject(container.appState)
                     .environmentObject(container.appState.statsObserver)
                     .preferredColorScheme(container.appState.settings.useDarkMode ? .dark : nil)
-                    .frame(minWidth: 900, minHeight: 600)
+                    .frame(
+                        minWidth: DesktopShellLayout.minimumWindowWidth,
+                        minHeight: DesktopShellLayout.minimumWindowHeight
+                    )
             }
         }
         .defaultSize(width: 1100, height: 720)
@@ -99,13 +103,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // window is opened (via AppSceneRouter.setMode(.desktop)).
         NSApp.setActivationPolicy(.accessory)
 
+        // Handle URL scheme (mywhi://record, mywhi://stop, etc.)
+        NSAppleEventManager.shared().setEventHandler(
+            self,
+            andSelector: #selector(handleURLEvent(_:withReplyEvent:)),
+            forEventClass: AEEventClass(kInternetEventClass),
+            andEventID: AEEventID(kAEGetURL)
+        )
+
         // ---- Status item ----
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem.button {
-            button.image = NSImage(
-                systemSymbolName: "mic",
-                accessibilityDescription: "MyWhi"
-            )
+            button.image = menuBarIcon(accessibilityDescription: "MyWhi")
             button.imagePosition = .imageOnly
             button.target = self
             button.action = #selector(togglePopover(_:))
@@ -200,6 +209,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    // MARK: - URL Scheme Handler
+
+    @objc private func handleURLEvent(_ event: NSAppleEventDescriptor, withReplyEvent: NSAppleEventDescriptor) {
+        guard let urlString = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
+              let url = URL(string: urlString),
+              url.scheme == "mywhi" else { return }
+
+        let host = url.host ?? ""
+        let action = host.lowercased()
+
+        switch action {
+        case "record", "start":
+            NotificationCenter.default.post(name: .mywhiToggleRecording, object: nil)
+        case "stop":
+            if appState.status == .recording {
+                NotificationCenter.default.post(name: .mywhiToggleRecording, object: nil)
+            }
+        case "discard":
+            if appState.status == .recording {
+                NotificationCenter.default.post(name: .mywhiDiscardRecording, object: nil)
+            }
+        case "open":
+            NotificationCenter.default.post(name: .mywhiOpenDesktop, object: nil)
+        case "toggle-hud":
+            if appState.status == .idle {
+                appState.settings.showIdleFloatingHUD.toggle()
+            }
+        default:
+            NSLog("MyWhi: Unknown URL action: \(action)")
+        }
+    }
+
     // MARK: - Popover
 
     @objc func togglePopover(_ sender: Any?) {
@@ -222,16 +263,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showContextMenu(from button: NSStatusBarButton) {
         let menu = NSMenu()
-        menu.addItem(withTitle: "About MyWhi", action: #selector(about), keyEquivalent: "")
-        menu.addItem(withTitle: "Open MyWhi", action: #selector(openDesktop), keyEquivalent: "")
-        menu.addItem(withTitle: "Open Design Preview", action: #selector(openDesignPreview), keyEquivalent: "")
+        menu.addItem(withTitle: localized("About MyWhi"), action: #selector(about), keyEquivalent: "")
+        menu.addItem(withTitle: localized("Check for Updates..."), action: #selector(checkForUpdates), keyEquivalent: "")
+        menu.addItem(withTitle: localized("Open MyWhi"), action: #selector(openDesktop), keyEquivalent: "")
+        menu.addItem(withTitle: localized("Open Design Preview"), action: #selector(openDesignPreview), keyEquivalent: "")
 
         // Phase 20: Recent transcripts submenu. Power-user shortcut for
         // re-copying something from a few minutes ago without opening
         // the desktop app. We rebuild the submenu on every right-click
         // so it reflects the latest `statsObserver.notes`.
         let recent = NSMenuItem()
-        recent.title = "Recent transcripts"
+        recent.title = localized("Recent transcripts")
         recent.submenu = buildRecentTranscriptsMenu()
         // Disabled title-like item — submenu doesn't show on its own.
         if recent.submenu?.items.isEmpty == true {
@@ -240,7 +282,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(recent)
 
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Quit MyWhi", action: #selector(quit), keyEquivalent: "q")
+        menu.addItem(withTitle: localized("Quit MyWhi"), action: #selector(quit), keyEquivalent: "q")
         menu.items.forEach { $0.target = self }
         statusItem.menu = menu
         button.performClick(nil)
@@ -254,7 +296,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let submenu = NSMenu()
         let notes = MainActor.assumeIsolated { appState.statsObserver.notes }
         if notes.isEmpty {
-            let empty = NSMenuItem(title: "Нет записей", action: nil, keyEquivalent: "")
+            let empty = NSMenuItem(title: localized("Нет записей"), action: nil, keyEquivalent: "")
             empty.isEnabled = false
             submenu.addItem(empty)
             return submenu
@@ -288,14 +330,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let model = MainActor.assumeIsolated { appState.settings.modelSize }
         let lang = MainActor.assumeIsolated { appState.settings.language }
         let engine = MainActor.assumeIsolated { appState.activeEngineName }
-        alert.informativeText = """
-        Local-only voice dictation for macOS.
-        Engine: \(engine)
-
-        Model: \(model)
-        Language: \(lang)
-        """
+        alert.informativeText = String(
+            format: localized("Local-only voice dictation for macOS.\nEngine: %@\n\nModel: %@\nLanguage: %@"),
+            engine,
+            model,
+            lang
+        )
         alert.runModal()
+    }
+
+    @objc private func checkForUpdates() {
+        container.updateController.checkForUpdates(nil)
     }
 
     @objc private func openDesktop() {
@@ -308,6 +353,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func quit() {
         NSApp.terminate(nil)
+    }
+
+    private func localized(_ key: String) -> String {
+        NSLocalizedString(key, comment: "")
     }
 
     // MARK: - Floating HUD
@@ -424,13 +473,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func refreshIcon(for status: AppStatus) {
         guard let button = statusItem.button else { return }
-        let symbolName = status.iconName
-        guard let img = NSImage(
-            systemSymbolName: symbolName,
-            accessibilityDescription: "MyWhi — \(status.rawValue)"
-        ) else { return }
-        img.isTemplate = true
-        button.image = img
+        button.image = menuBarIcon(accessibilityDescription: "MyWhi — \(status.rawValue)")
+    }
+
+    private func menuBarIcon(accessibilityDescription: String) -> NSImage? {
+        let image = NSImage(named: "MenuBarIconTemplate")
+            ?? NSImage(systemSymbolName: "mic", accessibilityDescription: accessibilityDescription)
+        image?.isTemplate = true
+        image?.size = NSSize(width: 18, height: 18)
+        image?.accessibilityDescription = accessibilityDescription
+        return image
     }
 
     // MARK: - Dock badge (Phase 18)

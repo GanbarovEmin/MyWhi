@@ -71,10 +71,18 @@ struct FloatingVoiceHUDView: View {
                         .frame(width: 168)
                     }
                 } else {
-                    Text(subtitle)
-                        .font(HDFont.micro)
-                        .foregroundStyle(theme.muted)
-                        .lineLimit(1)
+                    HStack(spacing: HDSpacing.sm.rawValue) {
+                        HDWaveformView(
+                            level: appState.recorderLevel,
+                            style: .compact,
+                            color: theme.deepGreen.opacity(0.3)
+                        )
+                        .frame(width: 48)
+                        Text(subtitle)
+                            .font(HDFont.micro)
+                            .foregroundStyle(theme.muted)
+                            .lineLimit(1)
+                    }
                 }
             }
 

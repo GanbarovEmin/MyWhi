@@ -38,7 +38,7 @@ struct HDButtonPrimary: View {
                     Image(systemName: icon)
                         .font(HDFont.iconSmall)
                 }
-                Text(title)
+                Text(LocalizedStringKey(title))
                     .font(HDFont.button)
             }
             .padding(.horizontal, HDSpacing.xl.rawValue)
@@ -84,7 +84,7 @@ struct HDButtonSecondary: View {
                     Image(systemName: icon)
                         .font(HDFont.iconSmall)
                 }
-                Text(title)
+                Text(LocalizedStringKey(title))
                     .font(HDFont.body)
                     .underline(isHovering || isFocused)
             }
@@ -127,7 +127,7 @@ struct HDButtonPillOutline: View {
                     Image(systemName: icon)
                         .font(HDFont.iconTiny)
                 }
-                Text(title)
+                Text(LocalizedStringKey(title))
                     .font(HDFont.button)
             }
             .padding(.horizontal, HDSpacing.md.rawValue)
@@ -171,7 +171,7 @@ struct HDButtonCoral: View {
 
     var body: some View {
         Button(action: action) {
-            Text(title)
+            Text(LocalizedStringKey(title))
                 .font(HDFont.cardHeading)
                 .foregroundStyle(isSelected ? theme.ink : theme.coral)
                 .padding(.horizontal, HDSpacing.md.rawValue + 2)

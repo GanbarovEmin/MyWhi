@@ -1,168 +1,107 @@
 # MyWhi
 
-A native macOS dictation app. Local-only, on-device Whisper inference, Markdown-vault history. No cloud, no telemetry, no Electron.
+Local-first macOS dictation powered by WhisperKit. Speak, get text, keep the history as Markdown. No cloud transcription, no Electron, no telemetry.
 
-> **v2.0** — single-engine (WhisperKit only). faster-whisper removed: WhisperKit turned out to be faster AND more accurate in our testing. See `.hermes/plans/2026-06-17_135054-mywhi-v2.md` for the design doc.
+![MyWhi recording screen](docs/assets/mywhi-record.png)
 
-## What it does
+## Highlights
 
-- **Menu bar** — click the mic icon, speak, click again. Text lands in your clipboard.
-- **Desktop window** — sidebar with Запись / Scratchpad / Insights / Настройки. Open via menu bar right-click → "Open MyWhi", or `Cmd+Option+D` from anywhere.
-- **Engine**: WhisperKit (on-device, native Swift, 2-5× faster than Python alternatives)
-- **Markdown vault** — every transcript lives as a real `.md` file in `~/Library/Application Support/MyWhi/vault/YYYY/MM/`.
-- **Insights** — total words / chars, current streak, longest streak, GitHub-style 26-week heatmap, 30-day trend line, language breakdown.
-- **Drag-and-drop** — drop a `.wav` or `.m4a` file onto the Home tab to transcribe it.
-- **Obsidian** — Settings → "Open in Obsidian" opens the vault as an Obsidian vault.
+- Native macOS menu-bar and desktop app.
+- On-device WhisperKit transcription through Core ML / Metal.
+- Global hotkey: `Command` + `Option` + `D`.
+- Markdown vault in `~/Library/Application Support/MyWhi/vault/`.
+- Scratchpad, search, insights, streaks, heatmap, and language breakdown.
+- Russian / English UI follows the macOS system language.
+- Downloaded WhisperKit models stay cached across app reinstalls and are shown as downloaded in Settings.
+- Sparkle updates through GitHub Releases.
 
-## Quick start
+![MyWhi settings screen](docs/assets/mywhi-settings.png)
 
-```bash
-cd ~/Documents/MyWhi
-./build.sh          # builds dist/MyWhi.app
-./install.sh        # copies to /Applications/MyWhi.app
-open /Applications/MyWhi.app
-```
+## Install
 
-First launch:
+Download the latest DMG from [GitHub Releases](https://github.com/GanbarovEmin/MyWhi/releases).
 
-1. macOS will ask for **Microphone** permission — allow.
-2. Right-click the menu bar icon → **"Open MyWhi"** for the desktop window.
-3. (Optional) System Settings → Privacy & Security → **Accessibility** — needed for auto-paste.
-4. Press `Cmd+Option+D` from anywhere to start recording.
+1. Open `MyWhi-3.9.0.dmg`.
+2. Drag `MyWhi.app` to `Applications`.
+3. Open MyWhi from `/Applications`.
+4. Allow Microphone access when macOS asks.
+5. Optional: enable Accessibility permission if you want auto-paste into the active app.
 
-## Project layout
+The first public preview is ad-hoc signed, not Developer ID notarized. macOS Gatekeeper may require right-clicking the app and choosing **Open** on first launch.
 
-```
-~/Documents/MyWhi/
-├── Package.swift               # SwiftPM executable, target MyWhi, macOS 14+
-├── Info.plist                  # Bundle metadata (mic, no Dock by default)
-├── build.sh                    # swift build + .app wrap + ad-hoc sign
-├── install.sh                  # cp to /Applications/MyWhi.app
-├── uninstall.sh                # Remove app + data dir
-├── Sources/MyWhi/              # Swift source (44 files)
-│   ├── AppContainer.swift           # singleton bridge SwiftUI ↔ AppKit
-│   ├── AppState.swift               # @MainActor source of truth
-│   ├── AppSceneRouter.swift         # .menuBar ↔ .desktop activation policy
-│   ├── AppStatus.swift              # idle|recording|transcribing|copied|error
-│   ├── AudioRecorder.swift          # AVAudioRecorder → WAV 16kHz mono
-│   ├── ClipboardService.swift       # NSPasteboard
-│   ├── HistoryStore.swift           # legacy JSON (one-shot migration)
-│   ├── Settings.swift               # AppSettings ObservableObject
-│   ├── MainPopoverView.swift        # menu bar popover (380×540)
-│   ├── MyWhiApp.swift               # @main, scenes, AppDelegate
-│   ├── Notifications.swift          # Notification.Name catalog
-│   ├── Design/                      # Cohere-style design system
-│   │   ├── HDColor.swift, HDTokens.swift, HDFont.swift
-│   │   ├── Components/ (HDButton, HDCard, HDRecordButton,
-│   │   │   HDStatTile, HDSidebarItem)
-│   │   └── DesignSystemPreview.swift + DesignPreviewWindow.swift
-│   ├── Engine/                      # Transcription backends
-│   │   ├── Transcriber.swift        # protocol
-│   │   ├── WhisperKitTranscriber.swift
-│   │   ├── PythonTranscriber.swift  # fallback
-│   │   └── EngineManager.swift      # engine chooser + auto-fallback
-│   ├── Vault/                       # Markdown vault + index
-│   │   ├── VaultPaths.swift, VaultStore.swift, VaultIndex.swift
-│   │   ├── TranscriptFrontmatter.swift, TranscriptNote.swift
-│   │   └── AggregateStats.swift
-│   ├── Stats/                       # Streak + observer
-│   │   ├── StreakCalculator.swift
-│   │   └── StatsObserver.swift
-│   ├── Services/                    # Cross-cutting
-│   │   ├── GlobalHotKey.swift       # Carbon Cmd+Option+D
-│   │   ├── AutoPasteService.swift   # CGEvent Cmd+V (opt-in)
-│   │   └── HapticFeedback.swift     # NSHapticFeedbackManager
-│   └── Desktop/                     # Desktop window views
-│       ├── DesktopRootView.swift     # NavigationSplitView shell
-│       ├── Home/HomeView.swift + OnboardingCard.swift
-│       ├── Scratchpad/ScratchpadListView + ScratchpadDetailView +
-│       │              ScratchpadSearchField
-│       ├── Insights/InsightsView.swift  # heatmap + trend + breakdown
-│       └── Settings/SettingsViewDesktop.swift
-├── Tests/MyWhiTests/             # 28 tests
-│   ├── StreakCalculatorTests.swift
-│   ├── VaultStoreTests.swift
-│   └── VaultIndexTests.swift
-├── Resources/                  # AppIcon.icns
-├── build/                       # SwiftPM output (gitignored)
-```
+## Updates
 
-## Settings
+MyWhi uses Sparkle for app updates. Use either:
 
-In **Settings** (sidebar of the desktop app):
+- right-click the menu-bar icon and choose **Check for Updates...**
+- open **Settings** and click **Check for Updates**
 
-- **Engine** — WhisperKit (only engine)
-- **Model** — tiny / base / small / medium / large-v3-turbo / large-v3
-- **Language** — Russian / English / Auto-detect
-- **Auto copy to clipboard** — ON by default
-- **Save to vault** — ON by default
-- **Auto-paste into active app** — OFF by default; needs Accessibility permission
-
-Settings persist in `~/Library/Application Support/MyWhi/settings.json`.
-
-## Vault format
-
-```
-~/Library/Application Support/MyWhi/vault/
-└── 2026/
-    └── 06/
-        └── 2026-06-17-145812-privet-mir-kak-dela.md
-            ---
-            id: 8A1B2C3D-...
-            created_at: 2026-06-17T14:58:12Z
-            language: ru
-            model: small
-            engine: whisperkit
-            duration_seconds: 12.5
-            chars: 482
-            words: 78
-            audio: recording-1721234598.wav
-            ---
-            Привет мир, как дела...
-```
-
-Open in Obsidian, vim, TextEdit, anything that reads Markdown.
-
-## Global hotkey
-
-`Cmd+Option+D` toggles recording from anywhere in macOS.
-
-If it doesn't work, check System Settings → Privacy & Security → Accessibility — MyWhi may need to be added (the first keystroke triggers macOS's normal TCC prompt).
-
-## Migration from v1
-
-If you're upgrading from `Hermes Dictate` v1, the existing `history.json` is migrated automatically on first launch. Each entry becomes a `.md` file in the vault, and `history.json` is backed up as `history.json.migrated-<timestamp>`.
+Updates are read from the GitHub-hosted `appcast.xml` in this repository and download release DMGs from GitHub Releases.
 
 ## Privacy
 
-- All audio stays on your Mac.
-- WhisperKit inference runs on-device via Core ML / Metal on Apple Silicon.
-- Audio is written to `/tmp/mywhi/recordings/recording-<timestamp>.wav` during recording.
-- Microphone access is requested once via macOS's standard TCC prompt.
-- Accessibility permission is requested only if you enable auto-paste.
+- Audio stays on this Mac.
+- WhisperKit inference runs locally.
+- No cloud transcription service is called by MyWhi.
+- Recordings are temporary WAV files under `/tmp/mywhi/recordings/`.
+- Transcripts are saved as Markdown only when history saving is enabled.
+- Accessibility permission is used only for optional paste/typing behavior.
 
-## Known limits
+## Screenshots
 
-- WhisperKit model download on first use (~250MB for `small`, ~750MB for `medium`).
-- Vault index is in-memory; very large vaults (>1000 notes) may benefit from a SQLite FTS5 backend (deferred — current performance is fine for dozens to hundreds of notes).
-- `duration_seconds` in frontmatter is currently `0` — Phase 3 will populate it from `AVAudioRecorder`'s recorded duration.
-- Live transcription (streaming) is not implemented — recordings are transcribed in batch after stop.
+![MyWhi live recording HUD](docs/assets/mywhi-live.png)
 
-## Uninstall
+## Build From Source
 
-```bash
-./uninstall.sh
-```
+Requirements:
 
-Removes `/Applications/MyWhi.app` and optionally purges
-`~/Library/Application Support/MyWhi/` (settings + vault).
-
-## Development
+- macOS 14+
+- Xcode command line tools
+- Swift Package Manager
 
 ```bash
-swift build -c release           # build
-swift test                       # 28 tests
-./build.sh                       # build + package + sign
+git clone https://github.com/GanbarovEmin/MyWhi.git
+cd MyWhi
+swift test
+./build-dmg.sh --install
+open /Applications/MyWhi.app
 ```
 
-The `Sources/MyWhi/Design/DesignPreviewWindow` opens via the right-click menu → "Open Design Preview" — a catalog of every component.
+Build outputs:
+
+- app bundle: `dist/MyWhi.app`
+- DMG: `dist/MyWhi-3.9.0.dmg`
+
+## Release Workflow
+
+```bash
+swift test
+./build-dmg.sh --install
+codesign --verify --verbose=2 dist/MyWhi.app
+hdiutil verify dist/MyWhi-3.9.0.dmg
+```
+
+Sparkle appcast signing uses an EdDSA private key stored in the local macOS Keychain. The public key is committed in `Info.plist` as `SUPublicEDKey`; the private key must not be committed.
+
+Public distribution still needs Developer ID signing and notarization for a polished Gatekeeper experience.
+
+## Project Layout
+
+```text
+Sources/MyWhi/
+  MyWhiApp.swift                 App entrypoint and menu-bar integration
+  AppState.swift                 Main app state and recording flow
+  Engine/WhisperKitTranscriber   WhisperKit model loading and transcription
+  Desktop/                       Desktop shell, Home, Scratchpad, Insights, Settings
+  Services/UpdateController.swift Sparkle update controller
+Resources/
+  AppIcon.icns
+  en.lproj, ru.lproj             Localized UI strings
+docs/
+  assets/                        README screenshots
+  releases/                      Release notes
+```
+
+## License
+
+MIT. See [LICENSE](LICENSE).

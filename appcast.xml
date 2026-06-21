@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0"
+     xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"
+     xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <title>MyWhi Updates</title>
+    <link>https://github.com/GanbarovEmin/MyWhi</link>
+    <description>Release feed for MyWhi auto-updates.</description>
+    <language>en</language>
+    <item>
+      <title>MyWhi 3.9.0 Public Preview</title>
+      <pubDate>Sun, 21 Jun 2026 14:00:08 +0400</pubDate>
+      <sparkle:releaseNotesLink>https://raw.githubusercontent.com/GanbarovEmin/MyWhi/main/docs/releases/v3.9.0.md</sparkle:releaseNotesLink>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <enclosure
+        url="https://github.com/GanbarovEmin/MyWhi/releases/download/v3.9.0/MyWhi-3.9.0.dmg"
+        sparkle:version="39"
+        sparkle:shortVersionString="3.9.0"
+        sparkle:edSignature="XaxebSpiMGcnpGpQUfPuSsthWzoVmC0ezDGgQNxRRdWY706nPmMOKUbLe9MC7BN7r8JI3SdhJ3oW38kE/HnDDg=="
+        length="8583481"
+        type="application/x-apple-diskimage" />
+    </item>
+  </channel>
+</rss>

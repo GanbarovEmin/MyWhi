@@ -16,12 +16,15 @@ let package = Package(
         // WhisperKit — on-device Whisper inference via Argmax Core ML/Metal.
         // Primary transcription engine; faster-whisper (Python) is a fallback.
         .package(url: "https://github.com/argmaxinc/argmax-oss-swift", from: "1.0.0"),
+        // Sparkle — signed GitHub Releases app updates.
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.3"),
     ],
     targets: [
         .executableTarget(
             name: "MyWhi",
             dependencies: [
                 .product(name: "WhisperKit", package: "argmax-oss-swift"),
+                .product(name: "Sparkle", package: "Sparkle"),
             ],
             path: "Sources/MyWhi"
         ),
