@@ -136,7 +136,7 @@ struct DesktopRootView: View {
                     Image(systemName: "bolt.fill")
                         .font(HDFont.engineIcon)
                         .foregroundStyle(theme.muted)
-                    Text("\(appState.activeEngineName) · \(appState.settings.modelSize)")
+                    Text("\(appState.activeEngineName) · \(appState.activeModelDisplayName)")
                         .font(HDFont.micro)
                         .foregroundStyle(theme.muted)
                 }
@@ -308,7 +308,7 @@ private struct DesktopRecordingPill: View {
                 .buttonStyle(.plain)
                 .help("Остановить и транскрибировать")
             } else {
-                Text("⌘⌥D")
+                Text("⌥⌘")
                     .font(HDFont.monoLabel(size: 11, weight: .medium))
                     .foregroundStyle(theme.muted)
                     .padding(.horizontal, HDSpacing.sm.rawValue)
@@ -390,10 +390,10 @@ private struct DesktopRecordingPill: View {
         switch appState.status {
         case .idle:
             return appState.settings.pushToTalkMode
-                ? "Клик или удерживай ⌘⌥D для записи"
-                : "Клик или ⌘⌥D для старта"
+                ? "Клик или удерживай ⌥⌘ для записи"
+                : "Клик или ⌥⌘ для старта"
         case .transcribing:
-            return "WhisperKit · \(appState.settings.modelSize)"
+            return "\(appState.activeEngineName) · \(appState.activeModelDisplayName)"
         case .copied:
             return appState.settings.autoPaste ? "Вставлено в активное приложение" : "Скопировано в буфер"
         case .error:

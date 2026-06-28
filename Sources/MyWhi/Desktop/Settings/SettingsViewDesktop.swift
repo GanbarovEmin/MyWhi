@@ -42,6 +42,7 @@ struct SettingsViewDesktop: View {
                 aboutSection
             }
             .padding(HDSpacing.xxl.rawValue)
+            .padding(.bottom, 92)
             .frame(maxWidth: 760, alignment: .topLeading)
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }

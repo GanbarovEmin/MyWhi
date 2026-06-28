@@ -161,6 +161,15 @@ final class AppState: ObservableObject {
         settings.transcriptionBackend == "soniqo" ? settings.soniqoModel : settings.modelSize
     }
 
+    var activeModelDisplayName: String {
+        if settings.transcriptionBackend == "soniqo" {
+            return AppSettings.availableSoniqoModels
+                .first { $0.code == settings.soniqoModel }?
+                .label ?? settings.soniqoModel
+        }
+        return settings.modelSize
+    }
+
     /// Preload the engine on first use (called from init and from Settings
     /// when the user changes engine/model). Idempotent — concurrent callers
     /// share the same Task.

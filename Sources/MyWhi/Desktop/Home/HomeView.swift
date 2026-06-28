@@ -29,19 +29,17 @@ struct HomeView: View {
                 VStack(spacing: HDSpacing.xxl.rawValue) {
                     header
                     todayBar
+                    workflowStrip
                     recordControl
 
                     if !appState.lastTranscript.isEmpty {
                         lastTranscriptCard
                     }
 
-                    if statsObserver.notes.isEmpty {
-                        OnboardingCard()
-                    }
-
                     dropHint
                 }
                 .padding(HDSpacing.xxl.rawValue)
+                .padding(.bottom, 92)
                 .frame(maxWidth: 720)
             }
             .onDrop(of: [.fileURL, .audio, .data], isTargeted: nil) { providers in
@@ -76,6 +74,57 @@ struct HomeView: View {
         .background(
             RoundedRectangle(cornerRadius: HDRadius.md.rawValue, style: .continuous)
                 .fill(theme.surfaceStone)
+        )
+    }
+
+    private var workflowStrip: some View {
+        HStack(spacing: HDSpacing.md.rawValue) {
+            workflowChip(
+                icon: "keyboard",
+                title: "Быстрая диктовка",
+                subtitle: appState.settings.pushToTalkMode ? "Удерживай ⌥⌘" : "Нажми ⌥⌘"
+            )
+            workflowChip(
+                icon: appState.settings.autoPaste ? "cursorarrow.motionlines" : "doc.on.clipboard",
+                title: appState.settings.autoPaste ? "Авто-вставка" : "Буфер обмена",
+                subtitle: appState.settings.autoPaste ? "В активное поле" : "Готово к ⌘V"
+            )
+            workflowChip(
+                icon: appState.settings.transcriptionBackend == "soniqo" ? "waveform.badge.magnifyingglass" : "waveform",
+                title: appState.activeEngineName,
+                subtitle: appState.activeModelDisplayName
+            )
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func workflowChip(icon: String, title: String, subtitle: String) -> some View {
+        HStack(spacing: HDSpacing.sm.rawValue) {
+            Image(systemName: icon)
+                .font(HDFont.iconSmall)
+                .foregroundStyle(theme.deepGreen)
+                .frame(width: 18)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(HDFont.formLabel)
+                    .foregroundStyle(theme.ink)
+                    .lineLimit(1)
+                Text(subtitle)
+                    .font(HDFont.micro)
+                    .foregroundStyle(theme.muted)
+                    .lineLimit(1)
+            }
+        }
+        .padding(.horizontal, HDSpacing.md.rawValue)
+        .padding(.vertical, HDSpacing.sm.rawValue)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: HDRadius.sm.rawValue, style: .continuous)
+                .fill(theme.surfaceStone.opacity(0.72))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: HDRadius.sm.rawValue, style: .continuous)
+                .stroke(theme.border.opacity(0.75), lineWidth: 1)
         )
     }
 
@@ -201,10 +250,9 @@ struct HomeView: View {
     }
 
     private var statusSubtitle: String {
-        let model = appState.settings.modelSize
         let engine = appState.activeEngineName
         switch appState.status {
-        case .idle:         return "\(engine) · \(model)"
+        case .idle:         return "\(engine) · \(appState.activeModelDisplayName)"
         case .recording:    return "Говори сейчас"
         case .transcribing: return "Подожди пару секунд"
         case .copied:       return "⌘V — вставить"
@@ -233,14 +281,7 @@ struct HomeView: View {
                 .font(HDFont.caption)
                 .foregroundStyle(theme.muted)
             Spacer()
-            // Phase 10: coral button — a secondary CTA for the file picker.
-            // HDButtonCoral was defined as a taxonomy chip but never used
-            // in real UI; this gives it a purpose. Disabled during
-            // recording / transcribing to avoid racing the engine.
-            HDButtonCoral(
-                title: "Файл…",
-                isSelected: false
-            ) {
+            HDButtonPillOutline(title: "Файл…", icon: "folder") {
                 openFilePicker()
             }
             .disabled(
