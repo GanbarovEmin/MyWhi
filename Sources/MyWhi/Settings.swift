@@ -12,11 +12,19 @@ import Combine
 import Carbon.HIToolbox
 
 final class AppSettings: ObservableObject, Codable {
+    static let recommendedSoniqoModel = "qwen3-0.6b-8bit"
 
     // MARK: Engine
 
     @Published var modelSize: String               // tiny|base|small|medium|large-v3|...
     @Published var language: String                // ru | en | auto
+    @Published var transcriptionBackend: String    // whisperkit | soniqo
+    @Published var soniqoModel: String             // qwen3-0.6b-8bit | qwen3-1.7b-8bit | parakeet | nemotron
+    @Published var meetingModel: String            // Soniqo model used for Meeting Mode
+    @Published var meetingContext: String          // hotwords / participants / project context
+    @Published var meetingRecordSystemAudio: Bool  // capture call/system audio via ScreenCaptureKit
+    @Published var meetingDenoiseAudio: Bool       // DeepFilterNet3 preprocessing through speech CLI
+    @Published var meetingDiarizationEnabled: Bool // speaker split through speech diarize
 
     // MARK: Behavior
 
@@ -118,6 +126,18 @@ final class AppSettings: ObservableObject, Codable {
         ("large-v3",        "large-v3",        "~1.5 GB · максимальная точность · самый медленный"),
     ]
 
+    static let availableBackends: [(code: String, label: String, description: String)] = [
+        ("whisperkit", "WhisperKit", "стабильный нативный движок для быстрой диктовки"),
+        ("soniqo", "Soniqo Speech", "экспериментальный high-accuracy backend через локальный speech CLI"),
+    ]
+
+    static let availableSoniqoModels: [(code: String, label: String, description: String)] = [
+        ("qwen3-0.6b-8bit", "Qwen3 0.6B 8-bit", "рекомендовано · лучший баланс качества и скорости для RU/EN"),
+        ("qwen3-1.7b-8bit", "Qwen3 1.7B 8-bit", "максимальное качество, больше RAM"),
+        ("parakeet", "Parakeet TDT", "очень быстрый batch ASR"),
+        ("nemotron", "Nemotron Streaming", "пунктуация и streaming-oriented ASR"),
+    ]
+
     static let availableLanguages: [(code: String, label: String)] = [
         ("ru",   "Русский"),
         ("en",   "Английский"),
@@ -127,6 +147,13 @@ final class AppSettings: ObservableObject, Codable {
     init(
         modelSize: String = "small",
         language: String = "ru",
+        transcriptionBackend: String = "whisperkit",
+        soniqoModel: String = AppSettings.recommendedSoniqoModel,
+        meetingModel: String = AppSettings.recommendedSoniqoModel,
+        meetingContext: String = "",
+        meetingRecordSystemAudio: Bool = true,
+        meetingDenoiseAudio: Bool = true,
+        meetingDiarizationEnabled: Bool = true,
         autoCopy: Bool = true,
         saveHistory: Bool = true,
         autoPaste: Bool = false,
@@ -151,6 +178,17 @@ final class AppSettings: ObservableObject, Codable {
 
         let validLangCodes = AppSettings.availableLanguages.map(\.code)
         self.language = validLangCodes.contains(language) ? language : "ru"
+
+        let validBackends = AppSettings.availableBackends.map(\.code)
+        self.transcriptionBackend = validBackends.contains(transcriptionBackend) ? transcriptionBackend : "whisperkit"
+
+        let validSoniqoModels = AppSettings.availableSoniqoModels.map(\.code)
+        self.soniqoModel = validSoniqoModels.contains(soniqoModel) ? soniqoModel : AppSettings.recommendedSoniqoModel
+        self.meetingModel = validSoniqoModels.contains(meetingModel) ? meetingModel : AppSettings.recommendedSoniqoModel
+        self.meetingContext = meetingContext
+        self.meetingRecordSystemAudio = meetingRecordSystemAudio
+        self.meetingDenoiseAudio = meetingDenoiseAudio
+        self.meetingDiarizationEnabled = meetingDiarizationEnabled
 
         // Validate window seconds: 4-30s range.
         let clampedWindow = max(4, min(30, liveWindowSeconds))
@@ -221,7 +259,9 @@ final class AppSettings: ObservableObject, Codable {
              hotkeyModifiers, hotkeyKeyCode, liveStreamingEnabled, soundFeedbackEnabled,
              inlineEditorMode, pushToTalkMode, liveWindowSeconds, hudPosition,
              voiceCommandsEnabled, phantomCursorMode, showIdleFloatingHUD,
-             postProcessingEnabled
+             postProcessingEnabled, transcriptionBackend, soniqoModel, meetingModel,
+             meetingContext, meetingRecordSystemAudio, meetingDenoiseAudio,
+             meetingDiarizationEnabled
     }
 
     convenience init(from decoder: Decoder) throws {
@@ -234,6 +274,13 @@ final class AppSettings: ObservableObject, Codable {
         self.init(
             modelSize: try c.decodeIfPresent(String.self, forKey: .modelSize) ?? "small",
             language: try c.decodeIfPresent(String.self, forKey: .language) ?? "ru",
+            transcriptionBackend: try c.decodeIfPresent(String.self, forKey: .transcriptionBackend) ?? "whisperkit",
+            soniqoModel: try c.decodeIfPresent(String.self, forKey: .soniqoModel) ?? AppSettings.recommendedSoniqoModel,
+            meetingModel: try c.decodeIfPresent(String.self, forKey: .meetingModel) ?? AppSettings.recommendedSoniqoModel,
+            meetingContext: try c.decodeIfPresent(String.self, forKey: .meetingContext) ?? "",
+            meetingRecordSystemAudio: try c.decodeIfPresent(Bool.self, forKey: .meetingRecordSystemAudio) ?? true,
+            meetingDenoiseAudio: try c.decodeIfPresent(Bool.self, forKey: .meetingDenoiseAudio) ?? true,
+            meetingDiarizationEnabled: try c.decodeIfPresent(Bool.self, forKey: .meetingDiarizationEnabled) ?? true,
             autoCopy: try c.decodeIfPresent(Bool.self, forKey: .autoCopy) ?? true,
             saveHistory: try c.decodeIfPresent(Bool.self, forKey: .saveHistory) ?? true,
             autoPaste: try c.decodeIfPresent(Bool.self, forKey: .autoPaste) ?? false,
@@ -269,6 +316,13 @@ final class AppSettings: ObservableObject, Codable {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(modelSize, forKey: .modelSize)
         try c.encode(language, forKey: .language)
+        try c.encode(transcriptionBackend, forKey: .transcriptionBackend)
+        try c.encode(soniqoModel, forKey: .soniqoModel)
+        try c.encode(meetingModel, forKey: .meetingModel)
+        try c.encode(meetingContext, forKey: .meetingContext)
+        try c.encode(meetingRecordSystemAudio, forKey: .meetingRecordSystemAudio)
+        try c.encode(meetingDenoiseAudio, forKey: .meetingDenoiseAudio)
+        try c.encode(meetingDiarizationEnabled, forKey: .meetingDiarizationEnabled)
         try c.encode(autoCopy, forKey: .autoCopy)
         try c.encode(saveHistory, forKey: .saveHistory)
         try c.encode(autoPaste, forKey: .autoPaste)

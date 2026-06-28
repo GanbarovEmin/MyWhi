@@ -278,6 +278,14 @@ final class GlobalHotKey {
         handleReleaseEvent(event, targetKey: targetKey, targetMods: targetMods)
     }
 
+    static func isCommandOptionOnly(_ flags: NSEvent.ModifierFlags) -> Bool {
+        let normalized = flags.intersection(.deviceIndependentFlagsMask)
+        return normalized.contains(.command)
+            && normalized.contains(.option)
+            && !normalized.contains(.shift)
+            && !normalized.contains(.control)
+    }
+
     /// Convert Carbon modifier flags to NSEvent.ModifierFlags. Carbon
     /// uses cmdKey/optionKey/shiftKey/controlKey bits; Cocoa uses a
     /// separate OptionSet.

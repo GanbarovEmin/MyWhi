@@ -50,6 +50,7 @@ final class EngineManager: ObservableObject {
         self.makeEngine = { code in
             switch code {
             case "whisperkit":    return WhisperKitTranscriber()
+            case "soniqo":        return SoniqoTranscriber()
             default:
                 return UnloadedTranscriber()
             }

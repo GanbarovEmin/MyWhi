@@ -13,6 +13,7 @@ import SwiftUI
 
 enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
     case home
+    case meeting
     case scratchpad
     case insights
     case settings
@@ -22,6 +23,7 @@ enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .home:       return "mic"
+        case .meeting:    return "person.2.wave.2"
         case .scratchpad: return "doc.text"
         case .insights:   return "chart.bar"
         case .settings:   return "gear"
@@ -31,6 +33,7 @@ enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
     var label: String {
         switch self {
         case .home:       return "Запись"
+        case .meeting:    return "Meeting Mode"
         case .scratchpad: return "Scratchpad"
         case .insights:   return "Insights"
         case .settings:   return "Настройки"
@@ -169,6 +172,10 @@ struct DesktopRootView: View {
                 HomeView()
                     .id(SidebarSection.home)
                     .transition(.opacity.combined(with: .move(edge: .trailing)))
+            case .meeting:
+                MeetingModeView()
+                    .id(SidebarSection.meeting)
+                    .transition(.opacity)
             case .scratchpad:
                 ScratchpadSplitView(selection: $scratchpadSelection)
                     .id(SidebarSection.scratchpad)

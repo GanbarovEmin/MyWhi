@@ -4,10 +4,9 @@ import PackageDescription
 let package = Package(
     name: "MyWhi",
     platforms: [
-        // SwiftUI WindowGroup + MenuBarExtra require macOS 13+.
-        // WhisperKit requires macOS 14+. AppDelegate uses NSStatusItem
-        // (works on macOS 26.x; see MyWhiApp.swift header).
-        .macOS(.v14)
+        // Meeting Mode uses modern macOS audio capture flows, and the
+        // Soniqo speech toolchain targets current Apple Silicon systems.
+        .macOS("15.0")
     ],
     products: [
         .executable(name: "MyWhi", targets: ["MyWhi"]),

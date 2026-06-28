@@ -49,6 +49,7 @@ final class AppState: ObservableObject {
     let vaultIndex: VaultIndex
     let dictionaryStore: PersonalDictionaryStore
     let statsObserver: StatsObserver
+    let meetingMode: MeetingModeService
 
     // Phase 8: rolling partial-decode loop driven by the rolling audio
     // buffer maintained in AudioRecorder.
@@ -75,12 +76,23 @@ final class AppState: ObservableObject {
         self.vaultIndex = vi
         self.dictionaryStore = PersonalDictionaryStore()
         self.statsObserver = StatsObserver(vaultStore: vs, vaultIndex: vi)
+        self.meetingMode = MeetingModeService(vaultStore: vs)
         self.history = historyStore.load()
 
         recorder.$currentLevel
             .receive(on: RunLoop.main)
             .sink { [weak self] level in
                 self?.recorderLevel = level
+            }
+            .store(in: &cancellables)
+
+        // Forward nested settings changes through AppState. Views observe
+        // AppState, not AppSettings directly, so without this a Picker can
+        // update its own selection while the surrounding settings pane keeps
+        // rendering stale backend/model-specific controls.
+        settings.objectWillChange
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
             }
             .store(in: &cancellables)
 
@@ -141,13 +153,21 @@ final class AppState: ObservableObject {
 
     // MARK: - Engine
 
+    private var activeEngineCode: String {
+        settings.transcriptionBackend == "soniqo" ? "soniqo" : "whisperkit"
+    }
+
+    private var activeModelCode: String {
+        settings.transcriptionBackend == "soniqo" ? settings.soniqoModel : settings.modelSize
+    }
+
     /// Preload the engine on first use (called from init and from Settings
     /// when the user changes engine/model). Idempotent — concurrent callers
     /// share the same Task.
     private func preloadEngine() async {
-        NSLog("MyWhi.AppState: preloadEngine starting (engine=whisperkit, model=\(settings.modelSize))")
+        NSLog("MyWhi.AppState: preloadEngine starting (engine=\(activeEngineCode), model=\(activeModelCode))")
         do {
-            try await engineManager.setEngine("whisperkit", model: settings.modelSize)
+            try await engineManager.setEngine(activeEngineCode, model: activeModelCode)
             self.activeEngineName = engineManager.displayName
             self.engineDidFallback = engineManager.didFallback
             NSLog("MyWhi.AppState: preloadEngine done — active=\(activeEngineName), fallback=\(engineDidFallback)")
@@ -256,6 +276,10 @@ final class AppState: ObservableObject {
     // MARK: - Live streaming (Phase 8)
 
     private func startLiveStreaming() {
+        guard activeEngineCode == "whisperkit" else {
+            NSLog("MyWhi.AppState: live streaming disabled for \(activeEngineCode); final decode will use selected backend")
+            return
+        }
         if liveTranscriber == nil {
             liveTranscriber = LiveTranscriber(
                 recorder: recorder,
@@ -264,7 +288,7 @@ final class AppState: ObservableObject {
             )
         }
         liveTranscriber?.start(
-            model: settings.modelSize,
+            model: activeModelCode,
             language: settings.language
         ) { [weak self] partial in
             self?.livePartialTranscript = partial
@@ -297,7 +321,8 @@ final class AppState: ObservableObject {
     }
 
     private func transcribeFile(at url: URL, durationSeconds: Double? = nil) {
-        let model = settings.modelSize
+        let engine = activeEngineCode
+        let engineModel = activeModelCode
         let language = settings.language
         let autoCopy = settings.autoCopy
         let saveHistory = settings.saveHistory
@@ -311,13 +336,13 @@ final class AppState: ObservableObject {
                 await ensureEngineLoaded()
 
                 // Cache hit on subsequent recordings (no 6s re-init).
-                try await engineManager.setEngine("whisperkit", model: model)
+                try await engineManager.setEngine(engine, model: engineModel)
                 self.activeEngineName = engineManager.displayName
                 self.engineDidFallback = engineManager.didFallback
 
                 let rawText = try await engineManager.transcribe(
                     audioPath: url.path,
-                    model: model,
+                    model: engineModel,
                     language: language
                 )
                 let dictionary = await dictionaryStore.load()
@@ -335,7 +360,7 @@ final class AppState: ObservableObject {
                 // pretend the transcription succeeded. Show an
                 // informative error so the user knows what happened.
                 if text.isEmpty {
-                    NSLog("MyWhi.AppState: empty transcription (engine=whisperkit, model=\(model), file=\(filename))")
+                    NSLog("MyWhi.AppState: empty transcription (engine=\(engine), model=\(engineModel), file=\(filename))")
                     self.status = .error
                     self.errorMessage = "Не удалось распознать речь. Попробуй говорить громче или дольше."
                     HapticFeedback.error.fire()
@@ -369,7 +394,7 @@ final class AppState: ObservableObject {
                     _ = await statsObserver.recordTranscript(
                         text: text,
                         language: language,
-                        model: model,
+                        model: engineModel,
                         engine: activeEngineName,
                         durationSeconds: durationSeconds ?? recorder.lastRecordingDuration,
                         audio: filename

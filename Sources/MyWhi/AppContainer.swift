@@ -20,6 +20,9 @@ final class AppContainer: ObservableObject {
     let globalHotKey: GlobalHotKey
     let updateController: UpdateController
     private var undoMonitor: Any?
+    private var commandOptionGlobalMonitor: Any?
+    private var commandOptionLocalMonitor: Any?
+    private var commandOptionChordDown = false
     private var cancellables = Set<AnyCancellable>()
 
     private init() {
@@ -143,6 +146,8 @@ final class AppContainer: ObservableObject {
                 _ = UndoService.shared.undo()
             }
         }
+
+        installCommandOptionFallbackHotkey()
     }
 
     private func configurePushToTalk(_ enabled: Bool) {
@@ -163,9 +168,48 @@ final class AppContainer: ObservableObject {
         )
     }
 
+    private func installCommandOptionFallbackHotkey() {
+        commandOptionGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+            Task { @MainActor [weak self] in
+                self?.handleCommandOptionFallback(event.modifierFlags)
+            }
+        }
+
+        commandOptionLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+            Task { @MainActor [weak self] in
+                self?.handleCommandOptionFallback(event.modifierFlags)
+            }
+            return event
+        }
+    }
+
+    private func handleCommandOptionFallback(_ flags: NSEvent.ModifierFlags) {
+        let isDown = GlobalHotKey.isCommandOptionOnly(flags)
+        guard isDown != commandOptionChordDown else { return }
+        commandOptionChordDown = isDown
+
+        if isDown {
+            if appState.settings.pushToTalkMode {
+                if appState.status != .recording {
+                    appState.startRecording()
+                }
+            } else {
+                appState.toggleRecording()
+            }
+        } else if appState.settings.pushToTalkMode, appState.status == .recording {
+            appState.stopRecording()
+        }
+    }
+
     deinit {
         if let undoMonitor {
             NSEvent.removeMonitor(undoMonitor)
+        }
+        if let commandOptionGlobalMonitor {
+            NSEvent.removeMonitor(commandOptionGlobalMonitor)
+        }
+        if let commandOptionLocalMonitor {
+            NSEvent.removeMonitor(commandOptionLocalMonitor)
         }
     }
 }
