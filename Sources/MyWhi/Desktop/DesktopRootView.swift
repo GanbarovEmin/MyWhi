@@ -13,6 +13,7 @@ import SwiftUI
 
 enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
     case home
+    case meeting
     case scratchpad
     case insights
     case settings
@@ -22,6 +23,7 @@ enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .home:       return "mic"
+        case .meeting:    return "person.2.wave.2"
         case .scratchpad: return "doc.text"
         case .insights:   return "chart.bar"
         case .settings:   return "gear"
@@ -31,6 +33,7 @@ enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
     var label: String {
         switch self {
         case .home:       return "Запись"
+        case .meeting:    return "Meeting Mode"
         case .scratchpad: return "Scratchpad"
         case .insights:   return "Insights"
         case .settings:   return "Настройки"
@@ -133,7 +136,7 @@ struct DesktopRootView: View {
                     Image(systemName: "bolt.fill")
                         .font(HDFont.engineIcon)
                         .foregroundStyle(theme.muted)
-                    Text("\(appState.activeEngineName) · \(appState.settings.modelSize)")
+                    Text("\(appState.activeEngineName) · \(appState.activeModelDisplayName)")
                         .font(HDFont.micro)
                         .foregroundStyle(theme.muted)
                 }
@@ -169,6 +172,10 @@ struct DesktopRootView: View {
                 HomeView()
                     .id(SidebarSection.home)
                     .transition(.opacity.combined(with: .move(edge: .trailing)))
+            case .meeting:
+                MeetingModeView()
+                    .id(SidebarSection.meeting)
+                    .transition(.opacity)
             case .scratchpad:
                 ScratchpadSplitView(selection: $scratchpadSelection)
                     .id(SidebarSection.scratchpad)
@@ -301,7 +308,7 @@ private struct DesktopRecordingPill: View {
                 .buttonStyle(.plain)
                 .help("Остановить и транскрибировать")
             } else {
-                Text("⌘⌥D")
+                Text("⌥⌘")
                     .font(HDFont.monoLabel(size: 11, weight: .medium))
                     .foregroundStyle(theme.muted)
                     .padding(.horizontal, HDSpacing.sm.rawValue)
@@ -383,10 +390,10 @@ private struct DesktopRecordingPill: View {
         switch appState.status {
         case .idle:
             return appState.settings.pushToTalkMode
-                ? "Клик или удерживай ⌘⌥D для записи"
-                : "Клик или ⌘⌥D для старта"
+                ? "Клик или удерживай ⌥⌘ для записи"
+                : "Клик или ⌥⌘ для старта"
         case .transcribing:
-            return "WhisperKit · \(appState.settings.modelSize)"
+            return "\(appState.activeEngineName) · \(appState.activeModelDisplayName)"
         case .copied:
             return appState.settings.autoPaste ? "Вставлено в активное приложение" : "Скопировано в буфер"
         case .error:

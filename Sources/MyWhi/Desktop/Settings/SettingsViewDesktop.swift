@@ -32,6 +32,7 @@ struct SettingsViewDesktop: View {
                 header
                 engineSection
                 recordingSection
+                meetingSection
                 insertionSection
                 appearanceSection
                 textCleanupSection
@@ -41,6 +42,7 @@ struct SettingsViewDesktop: View {
                 aboutSection
             }
             .padding(HDSpacing.xxl.rawValue)
+            .padding(.bottom, 92)
             .frame(maxWidth: 760, alignment: .topLeading)
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
@@ -80,29 +82,35 @@ struct SettingsViewDesktop: View {
             VStack(alignment: .leading, spacing: HDSpacing.lg.rawValue) {
                 sectionTitle("Модель")
 
-                HStack {
-                    Text("Движок")
-                        .font(HDFont.formLabel)
-                        .foregroundStyle(theme.ink)
-                    Spacer()
-                    Text("WhisperKit")
-                        .font(HDFont.monoLabel(size: 12, weight: .medium))
-                        .padding(.horizontal, HDSpacing.sm.rawValue)
-                        .padding(.vertical, 2)
-                        .background(
-                            Capsule().fill(theme.surfacePaleGreen)
-                        )
-                        .foregroundStyle(theme.deepGreen)
+                settingsPickerRow(title: "Движок диктовки") {
+                    Picker("", selection: backendBinding) {
+                        ForEach(AppSettings.availableBackends, id: \.code) { backend in
+                            Text(backend.label).tag(backend.code)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(maxWidth: 360)
                 }
 
-                VStack(spacing: HDSpacing.xs.rawValue) {
-                    ForEach(AppSettings.availableModels, id: \.code) { entry in
-                        modelStatusRow(entry)
+                if appState.settings.transcriptionBackend == "whisperkit" {
+                    VStack(spacing: HDSpacing.xs.rawValue) {
+                        ForEach(AppSettings.availableModels, id: \.code) { entry in
+                            modelStatusRow(entry)
+                        }
                     }
-                }
-                .disabled(appState.engineManager.isLoading)
-                .onChange(of: appState.settings.modelSize) { _, _ in
-                    Task { await appState.reloadEngine() }
+                    .disabled(appState.engineManager.isLoading)
+                } else {
+                    VStack(spacing: HDSpacing.xs.rawValue) {
+                        ForEach(AppSettings.availableSoniqoModels, id: \.code) { entry in
+                            soniqoModelStatusRow(entry)
+                        }
+                    }
+                    .disabled(appState.engineManager.isLoading)
+                    Text(SoniqoTranscriber.isAvailable()
+                         ? "speech CLI установлен. Этот backend работает локально через Soniqo."
+                         : "speech CLI не найден. Установи через brew install speech.")
+                        .font(HDFont.caption)
+                        .foregroundStyle(SoniqoTranscriber.isAvailable() ? theme.muted : theme.coral)
                 }
 
                 Picker("Язык", selection: languageBinding) {
@@ -116,7 +124,7 @@ struct SettingsViewDesktop: View {
                     HStack(spacing: HDSpacing.sm.rawValue) {
                         ProgressView()
                             .controlSize(.small)
-                        Text("Загружается \(appState.settings.modelSize)…")
+                        Text("Загружается \(activeModelLabel)…")
                             .font(HDFont.caption)
                             .foregroundStyle(theme.muted)
                     }
@@ -129,7 +137,33 @@ struct SettingsViewDesktop: View {
     private var modelBinding: Binding<String> {
         Binding(
             get: { appState.settings.modelSize },
-            set: { appState.settings.modelSize = $0 }
+            set: { newValue in
+                guard appState.settings.modelSize != newValue else { return }
+                appState.settings.modelSize = newValue
+                Task { await appState.reloadEngine() }
+            }
+        )
+    }
+
+    private var backendBinding: Binding<String> {
+        Binding(
+            get: { appState.settings.transcriptionBackend },
+            set: { newValue in
+                guard appState.settings.transcriptionBackend != newValue else { return }
+                appState.settings.transcriptionBackend = newValue
+                Task { await appState.reloadEngine() }
+            }
+        )
+    }
+
+    private var soniqoModelBinding: Binding<String> {
+        Binding(
+            get: { appState.settings.soniqoModel },
+            set: { newValue in
+                guard appState.settings.soniqoModel != newValue else { return }
+                appState.settings.soniqoModel = newValue
+                Task { await appState.reloadEngine() }
+            }
         )
     }
 
@@ -140,13 +174,22 @@ struct SettingsViewDesktop: View {
         )
     }
 
+    private var activeModelLabel: String {
+        if appState.settings.transcriptionBackend == "soniqo" {
+            return AppSettings.availableSoniqoModels
+                .first { $0.code == appState.settings.soniqoModel }?
+                .label ?? appState.settings.soniqoModel
+        }
+        return appState.settings.modelSize
+    }
+
     private func modelStatusRow(_ entry: (code: String, label: String, description: String)) -> some View {
         let isSelected = appState.settings.modelSize == entry.code
         let isDownloaded = downloadedModels.contains(entry.code)
 
         return Button {
             guard appState.settings.modelSize != entry.code else { return }
-            appState.settings.modelSize = entry.code
+            modelBinding.wrappedValue = entry.code
         } label: {
             HStack(spacing: HDSpacing.md.rawValue) {
                 Image(systemName: isDownloaded ? "checkmark.circle.fill" : "icloud.and.arrow.down")
@@ -194,6 +237,59 @@ struct SettingsViewDesktop: View {
         .buttonStyle(.plain)
     }
 
+    private func soniqoModelStatusRow(_ entry: (code: String, label: String, description: String)) -> some View {
+        let isSelected = appState.settings.soniqoModel == entry.code
+        let isAvailable = SoniqoTranscriber.isAvailable()
+
+        return Button {
+            soniqoModelBinding.wrappedValue = entry.code
+        } label: {
+            HStack(spacing: HDSpacing.md.rawValue) {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "waveform")
+                    .font(HDFont.iconSmall)
+                    .foregroundStyle(isSelected ? theme.deepGreen : theme.muted)
+                    .frame(width: 22)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(LocalizedStringKey(entry.label))
+                        .font(HDFont.formLabel)
+                        .foregroundStyle(theme.ink)
+                    Text(LocalizedStringKey(entry.description))
+                        .font(HDFont.micro)
+                        .foregroundStyle(theme.muted)
+                }
+
+                Spacer(minLength: HDSpacing.md.rawValue)
+
+                if appState.engineManager.isLoading && isSelected {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+
+                Text(LocalizedStringKey(isAvailable ? "Готово" : "Нет CLI"))
+                    .font(HDFont.monoLabel(size: 10, weight: .medium))
+                    .padding(.horizontal, HDSpacing.sm.rawValue)
+                    .padding(.vertical, 3)
+                    .background(
+                        Capsule().fill(isAvailable ? theme.surfacePaleGreen : theme.surfaceStone)
+                    )
+                    .foregroundStyle(isAvailable ? theme.deepGreen : theme.muted)
+            }
+            .padding(.horizontal, HDSpacing.md.rawValue)
+            .padding(.vertical, HDSpacing.sm.rawValue)
+            .background(
+                RoundedRectangle(cornerRadius: HDRadius.sm.rawValue, style: .continuous)
+                    .fill(isSelected ? theme.surfaceStone.opacity(0.85) : Color.clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: HDRadius.sm.rawValue, style: .continuous)
+                    .stroke(isSelected ? theme.border : Color.clear, lineWidth: 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: HDRadius.sm.rawValue, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
     // MARK: Recording
 
     private var recordingSection: some View {
@@ -224,6 +320,37 @@ struct SettingsViewDesktop: View {
                     .frame(maxWidth: 220)
                 }
                 .help("Сколько секунд последнего аудио декодировать в каждом live-тике. Меньше — отзывчивее, больше — стабильнее.")
+            }
+        }
+    }
+
+    private var meetingSection: some View {
+        HDCard(.canvas) {
+            VStack(alignment: .leading, spacing: HDSpacing.md.rawValue) {
+                sectionTitle("Meeting Mode")
+
+                settingsPickerRow(title: "ASR для встреч") {
+                    Picker("", selection: meetingModelBinding) {
+                        ForEach(AppSettings.availableSoniqoModels, id: \.code) { model in
+                            Text(model.label).tag(model.code)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .frame(maxWidth: 260)
+                }
+
+                Toggle("Записывать системный звук звонка", isOn: meetingSystemAudioBinding)
+                    .help("Требует Screen Recording/System Audio permission. Если доступ не выдан, Meeting Mode продолжит запись микрофона.")
+                Toggle("Шумоподавление через DeepFilterNet3", isOn: meetingDenoiseBinding)
+                Toggle("Разделять по говорящим", isOn: meetingDiarizationBinding)
+
+                VStack(alignment: .leading, spacing: HDSpacing.xs.rawValue) {
+                    Text("Контекст для распознавания")
+                        .font(HDFont.formLabel)
+                        .foregroundStyle(theme.ink)
+                    TextField("Участники, проект, имена, термины", text: meetingContextBinding, axis: .vertical)
+                        .textFieldStyle(.roundedBorder)
+                }
             }
         }
     }
@@ -403,6 +530,26 @@ struct SettingsViewDesktop: View {
             get: { appState.settings.liveWindowSeconds },
             set: { appState.settings.liveWindowSeconds = $0 }
         )
+    }
+
+    private var meetingModelBinding: Binding<String> {
+        Binding(get: { appState.settings.meetingModel }, set: { appState.settings.meetingModel = $0 })
+    }
+
+    private var meetingSystemAudioBinding: Binding<Bool> {
+        Binding(get: { appState.settings.meetingRecordSystemAudio }, set: { appState.settings.meetingRecordSystemAudio = $0 })
+    }
+
+    private var meetingDenoiseBinding: Binding<Bool> {
+        Binding(get: { appState.settings.meetingDenoiseAudio }, set: { appState.settings.meetingDenoiseAudio = $0 })
+    }
+
+    private var meetingDiarizationBinding: Binding<Bool> {
+        Binding(get: { appState.settings.meetingDiarizationEnabled }, set: { appState.settings.meetingDiarizationEnabled = $0 })
+    }
+
+    private var meetingContextBinding: Binding<String> {
+        Binding(get: { appState.settings.meetingContext }, set: { appState.settings.meetingContext = $0 })
     }
 
     private var hudPositionBinding: Binding<AppSettings.HUDPosition> {

@@ -29,8 +29,8 @@
     <string>39</string>
     <key>LSApplicationCategoryType</key>
     <string>public.app-category.productivity</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>14.0</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>15.0</string>
     <key>LSUIElement</key>
     <true/>
     <key>SUFeedURL</key>
@@ -43,8 +43,10 @@
     <false/>
     <key>NSHighResolutionCapable</key>
     <true/>
-    <key>NSMicrophoneUsageDescription</key>
-    <string>MyWhi needs microphone access to record your voice for local transcription.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>MyWhi needs microphone access to record your voice for local transcription.</string>
+	<key>NSScreenCaptureUsageDescription</key>
+	<string>MyWhi needs screen and system audio capture access to record meeting audio during Meeting Mode.</string>
     <key>CFBundleURLTypes</key>
     <array>
         <dict>

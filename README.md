@@ -1,21 +1,53 @@
 # MyWhi
 
-Local-first macOS dictation powered by WhisperKit. Speak, get text, keep the history as Markdown. No cloud transcription, no Electron, no telemetry.
+Local-first macOS dictation and meeting transcription app. MyWhi turns spoken Russian or English into clean text for notes, messages, documents, and work calls without sending audio to a cloud transcription service.
 
-![MyWhi recording screen](docs/assets/mywhi-record.png)
+It is built as a native Swift / SwiftUI desktop app for macOS with local speech-to-text backends, global hotkeys, Markdown history, and a dedicated Meeting Mode for long calls.
 
-## Highlights
+![MyWhi daily dictation screen](docs/assets/mywhi-record.png)
 
-- Native macOS menu-bar and desktop app.
-- On-device WhisperKit transcription through Core ML / Metal.
-- Global hotkey: `Command` + `Option` + `D`.
-- Markdown vault in `~/Library/Application Support/MyWhi/vault/`.
-- Scratchpad, search, insights, streaks, heatmap, and language breakdown.
-- Russian / English UI follows the macOS system language.
-- Downloaded WhisperKit models stay cached across app reinstalls and are shown as downloaded in Settings.
-- Sparkle updates through GitHub Releases.
+## What MyWhi Does
 
-![MyWhi settings screen](docs/assets/mywhi-settings.png)
+- **Fast daily dictation**: press `Option` + `Command`, speak, and get text ready to paste or auto-insert into the active app.
+- **Voice message transcription**: drag `.wav` or `.m4a` files into MyWhi and convert them to editable text.
+- **Meeting Mode**: record work calls, capture microphone and system audio, then prepare transcript, speaker-aware notes, and summary output.
+- **Local speech-to-text**: choose between WhisperKit and Soniqo Speech models for offline ASR on your Mac.
+- **RU / EN workflow**: Russian, English, and auto language modes for everyday multilingual work.
+- **Markdown vault**: save transcripts locally as Markdown in `~/Library/Application Support/MyWhi/vault/`.
+- **Native macOS UX**: menu-bar presence, desktop window, global hotkey, Sparkle updates, no Electron.
+
+## Meeting Mode
+
+Meeting Mode is a separate workspace for calls and long-form recordings. It is designed for work meetings where you need the transcript, speakers, and a useful summary after the call.
+
+![MyWhi Meeting Mode](docs/assets/mywhi-meeting.png)
+
+The current pipeline focuses on:
+
+- microphone recording
+- optional system audio capture for video calls
+- Soniqo Speech ASR model selection
+- noise cleanup toggle
+- speaker separation toggle
+- context field for names, projects, and domain terms
+
+## Speech Engines
+
+MyWhi supports two local transcription paths:
+
+- **Soniqo Speech**: recommended default for the current daily dictation workflow. The bundled model selector includes Qwen3 0.6B 8-bit, Qwen3 1.7B 8-bit, Parakeet TDT, and Nemotron Streaming options.
+- **WhisperKit**: local Core ML / Metal transcription with cached Whisper models for offline use.
+
+![MyWhi settings and model picker](docs/assets/mywhi-settings.png)
+
+## Why Local-First
+
+- Audio stays on this Mac.
+- Transcription runs locally through the selected backend.
+- MyWhi does not call a cloud transcription API.
+- Temporary recordings are stored under `/tmp/mywhi/recordings/`.
+- Saved transcript history is plain Markdown.
+- Accessibility permission is used only for optional paste/typing behavior.
 
 ## Install
 
@@ -25,9 +57,10 @@ Download the latest DMG from [GitHub Releases](https://github.com/GanbarovEmin/M
 2. Drag `MyWhi.app` to `Applications`.
 3. Open MyWhi from `/Applications`.
 4. Allow Microphone access when macOS asks.
-5. Optional: enable Accessibility permission if you want auto-paste into the active app.
+5. Optional: enable Accessibility permission for auto-paste into the active app.
+6. Optional: enable Screen Recording/System Audio permission for Meeting Mode call audio.
 
-The first public preview is ad-hoc signed, not Developer ID notarized. macOS Gatekeeper may require right-clicking the app and choosing **Open** on first launch.
+The current public preview is ad-hoc signed, not Developer ID notarized. macOS Gatekeeper may require right-clicking the app and choosing **Open** on first launch.
 
 ## Updates
 
@@ -37,15 +70,6 @@ MyWhi uses Sparkle for app updates. Use either:
 - open **Settings** and click **Check for Updates**
 
 Updates are read from the GitHub-hosted `appcast.xml` in this repository and download release DMGs from GitHub Releases.
-
-## Privacy
-
-- Audio stays on this Mac.
-- WhisperKit inference runs locally.
-- No cloud transcription service is called by MyWhi.
-- Recordings are temporary WAV files under `/tmp/mywhi/recordings/`.
-- Transcripts are saved as Markdown only when history saving is enabled.
-- Accessibility permission is used only for optional paste/typing behavior.
 
 ## Build From Source
 
@@ -85,18 +109,23 @@ Public distribution still needs Developer ID signing and notarization for a poli
 
 ```text
 Sources/MyWhi/
-  MyWhiApp.swift                 App entrypoint and menu-bar integration
-  AppState.swift                 Main app state and recording flow
-  Engine/WhisperKitTranscriber   WhisperKit model loading and transcription
-  Desktop/                       Desktop shell, Home, Scratchpad, Insights, Settings
+  MyWhiApp.swift                  App entrypoint and menu-bar integration
+  AppState.swift                  Main app state and recording flow
+  Engine/                         WhisperKit and Soniqo transcription backends
+  Desktop/                        Desktop shell, Home, Meeting Mode, Scratchpad, Insights, Settings
   Services/UpdateController.swift Sparkle update controller
 Resources/
   AppIcon.icns
-  en.lproj, ru.lproj             Localized UI strings
+  en.lproj, ru.lproj              Localized UI strings
 docs/
-  assets/                        README screenshots
-  releases/                      Release notes
+  assets/                         README screenshots
+  audits/                         UI/UX audit notes
+  releases/                       Release notes
 ```
+
+## Keywords
+
+macOS dictation, offline speech-to-text, local transcription, WhisperKit, Soniqo Speech, SwiftUI dictation app, meeting transcription, call transcription, Russian ASR, English ASR, voice notes, Markdown transcripts.
 
 ## License
 

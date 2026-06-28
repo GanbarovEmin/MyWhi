@@ -141,4 +141,13 @@ final class PushToTalkTests: XCTestCase {
         }
         XCTAssertEqual(releaseCount, 1, "Non-matching keyUp must not fire onRelease")
     }
+
+    @MainActor
+    func testCommandOptionOnlyDetectorRejectsExtraModifiers() {
+        XCTAssertTrue(GlobalHotKey.isCommandOptionOnly([.command, .option]))
+        XCTAssertFalse(GlobalHotKey.isCommandOptionOnly([.command]))
+        XCTAssertFalse(GlobalHotKey.isCommandOptionOnly([.option]))
+        XCTAssertFalse(GlobalHotKey.isCommandOptionOnly([.command, .option, .shift]))
+        XCTAssertFalse(GlobalHotKey.isCommandOptionOnly([.command, .option, .control]))
+    }
 }

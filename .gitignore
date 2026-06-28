@@ -19,3 +19,4 @@ dist/
 
 # Local agent/audit artifacts
 .hermes/
+docs/audits/**/*.png
