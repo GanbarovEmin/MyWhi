@@ -148,12 +148,45 @@ final class SoniqoTranscriber: Transcriber, @unchecked Sendable {
             .first { FileManager.default.isExecutableFile(atPath: $0.path) }
     }
 
-    private static func cleanTranscriptOutput(_ raw: String) -> String {
+    static func cleanTranscriptOutput(_ raw: String) -> String {
+        let normalized = raw.replacingOccurrences(of: "\r\n", with: "\n")
+        if let resultRange = normalized.range(of: "Result:", options: [.caseInsensitive, .backwards]) {
+            let resultText = normalized[resultRange.upperBound...]
+            let cleanedResult = stripTimingSuffix(String(resultText))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !cleanedResult.isEmpty {
+                return cleanedResult
+            }
+        }
+
         let lines = raw
             .components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
-            .filter { !$0.hasPrefix("[") && !$0.hasPrefix("Loading ") && !$0.hasPrefix("Downloading ") }
+            .filter { !isDiagnosticLine($0) }
         return lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func stripTimingSuffix(_ text: String) -> String {
+        var result = text
+        for marker in ["\nTime:", " Time:", "\nRTF:", " RTF:"] {
+            if let range = result.range(of: marker, options: [.caseInsensitive, .backwards]) {
+                result = String(result[..<range.lowerBound])
+            }
+        }
+        return result
+    }
+
+    private static func isDiagnosticLine(_ line: String) -> Bool {
+        let lowercased = line.lowercased()
+        return lowercased.hasPrefix("[")
+            || lowercased.hasPrefix("loaded ")
+            || lowercased.hasPrefix("found ")
+            || lowercased.hasPrefix("loading")
+            || lowercased.hasPrefix("downloading")
+            || lowercased.hasPrefix("applied weights ")
+            || lowercased.hasPrefix("transcribing")
+            || lowercased.hasPrefix("time:")
+            || lowercased.hasPrefix("rtf:")
     }
 }
